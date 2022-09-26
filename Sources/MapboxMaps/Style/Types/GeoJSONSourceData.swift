@@ -1,4 +1,5 @@
 import Foundation
+import Turf
 
 /// Captures potential values of the `data` property of a GeoJSONSource
 public enum GeoJSONSourceData: Codable {
@@ -36,6 +37,11 @@ public enum GeoJSONSourceData: Codable {
             return
         }
 
+        if let decodedString = try? container.decode(String.self), decodedString.isEmpty {
+            self = .empty
+            return
+        }
+
         let context = DecodingError.Context(codingPath: decoder.codingPath,
                                             debugDescription: "Failed to decode GeoJSONSource `data` property")
         throw DecodingError.dataCorrupted(context)
@@ -55,6 +61,28 @@ public enum GeoJSONSourceData: Codable {
             try container.encode(geometry)
         case .empty:
             try container.encode("")
+        }
+    }
+
+    internal func stringValue() throws -> String {
+        switch self {
+        case .url(let uRL):
+            return uRL.absoluteString
+        default:
+            return try self.toString()
+        }
+    }
+}
+
+extension GeoJSONObject {
+    internal var sourceData: GeoJSONSourceData {
+        switch self {
+        case .geometry(let geometry):
+            return .geometry(geometry)
+        case .feature(let feature):
+            return .feature(feature)
+        case .featureCollection(let collection):
+            return .featureCollection(collection)
         }
     }
 }

@@ -33,7 +33,7 @@ public class PolygonAnnotationManager: AnnotationManagerInternal {
     // MARK: - Setup / Lifecycle
 
     /// Dependency required to add sources/layers to the map
-    private let style: Style
+    private let style: StyleProtocol
 
     /// Storage for common layer properties
     private var layerProperties: [String: Any] = [:] {
@@ -54,7 +54,7 @@ public class PolygonAnnotationManager: AnnotationManagerInternal {
     private var isDestroyed = false
 
     internal init(id: String,
-                  style: Style,
+                  style: StyleProtocol,
                   layerPosition: LayerPosition?,
                   displayLinkCoordinator: DisplayLinkCoordinator) {
         self.id = id
@@ -154,9 +154,7 @@ public class PolygonAnnotationManager: AnnotationManagerInternal {
         // build and update the source data
         let featureCollection = FeatureCollection(features: annotations.map(\.feature))
         do {
-            let data = try JSONEncoder().encode(featureCollection)
-            let jsonObject = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-            try style.setSourceProperty(for: sourceId, property: "data", value: jsonObject)
+            try style.updateGeoJSONSource(withId: sourceId, geoJSON: .featureCollection(featureCollection))
         } catch {
             Log.error(
                 forMessage: "Could not update annotations in PolygonAnnotationManager due to error: \(error)",

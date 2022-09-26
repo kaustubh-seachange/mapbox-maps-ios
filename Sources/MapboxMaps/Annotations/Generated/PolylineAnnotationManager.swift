@@ -33,7 +33,7 @@ public class PolylineAnnotationManager: AnnotationManagerInternal {
     // MARK: - Setup / Lifecycle
 
     /// Dependency required to add sources/layers to the map
-    private let style: Style
+    private let style: StyleProtocol
 
     /// Storage for common layer properties
     private var layerProperties: [String: Any] = [:] {
@@ -54,7 +54,7 @@ public class PolylineAnnotationManager: AnnotationManagerInternal {
     private var isDestroyed = false
 
     internal init(id: String,
-                  style: Style,
+                  style: StyleProtocol,
                   layerPosition: LayerPosition?,
                   displayLinkCoordinator: DisplayLinkCoordinator) {
         self.id = id
@@ -154,9 +154,7 @@ public class PolylineAnnotationManager: AnnotationManagerInternal {
         // build and update the source data
         let featureCollection = FeatureCollection(features: annotations.map(\.feature))
         do {
-            let data = try JSONEncoder().encode(featureCollection)
-            let jsonObject = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-            try style.setSourceProperty(for: sourceId, property: "data", value: jsonObject)
+            try style.updateGeoJSONSource(withId: sourceId, geoJSON: .featureCollection(featureCollection))
         } catch {
             Log.error(
                 forMessage: "Could not update annotations in PolylineAnnotationManager due to error: \(error)",
@@ -226,7 +224,7 @@ public class PolylineAnnotationManager: AnnotationManagerInternal {
         }
     }
 
-    /// The line trim-off percentage range based on the whole line gradinet range [0.0, 1.0]. The line part between [trim-start, trim-end] will be marked as transparent to make a route vanishing effect. If either 'trim-start' or 'trim-end' offset is out of valid range, the default range will be set.
+    /// The line part between [trim-start, trim-end] will be marked as transparent to make a route vanishing effect. The line trim-off offset is based on the whole line range [0.0, 1.0].
     public var lineTrimOffset: [Double]? {
         get {
             return layerProperties["line-trim-offset"] as? [Double]

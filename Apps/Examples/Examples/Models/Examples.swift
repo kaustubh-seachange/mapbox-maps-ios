@@ -154,14 +154,19 @@ struct Examples {
         Example(title: "Advanced Viewport Gestures",
                 description: "Viewport configured to allow gestures",
                 type: AdvancedViewportGesturesExample.self),
-
+        Example(title: "Filter symbols based on pitch and distance",
+                description: "Use pitch and distance-from-center expressions in the filter field of a symbol layer to remove large size POI labels in the far distance at high pitch",
+                type: PitchAndDistanceExample.self),
     ]
 
     // Miscellaneous examples
     public static let labExamples = [
         Example(title: "Resizable image",
                 description: "Add a resizable image with cap insets to a style.",
-                type: ResizableImageExample.self)
+                type: ResizableImageExample.self),
+        Example(title: "Geojson performance",
+                description: "Display long route as large geojson",
+                type: LargeGeoJSONPerformanceExample.self)
     ]
 
     // Examples that focus on displaying the user's location.

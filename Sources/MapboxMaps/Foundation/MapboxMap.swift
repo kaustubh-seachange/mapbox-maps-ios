@@ -79,11 +79,11 @@ public final class MapboxMap: MapboxMapProtocol {
     // MARK: - Style loading
 
     private func observeStyleLoad(_ completion: @escaping (Result<Style, Error>) -> Void) {
-        onNext(event: .styleLoaded) { _ in
-            if !self.style.isLoaded {
+        onNext(event: .styleLoaded) { [style] _ in
+            if !style.isLoaded {
                 Log.warning(forMessage: "style.isLoaded == false, was this an empty style?", category: "Style")
             }
-            completion(.success(self.style))
+            completion(.success(style))
         }
 
         onNext(event: .mapLoadingError) { event in
@@ -1125,8 +1125,11 @@ extension MapboxMap {
 }
 
 // MARK: - Map Recorder
+
 extension MapboxMap {
-    internal func makeRecorder() -> MapRecorder {
+
+    // swiftlint:disable:next missing_docs
+    @_spi(Internal) public final func makeRecorder() -> MapRecorder {
         MapRecorder(mapView: __map)
     }
 }
