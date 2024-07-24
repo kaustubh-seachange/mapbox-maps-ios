@@ -1,110 +1,127 @@
 import Foundation
 import XCTest
-@testable import MapboxMaps
+@testable @_spi(Experimental) import MapboxMaps
 @_implementationOnly import MapboxCommon_Private
 
-final class StyleTests: XCTestCase {
-    var style: Style!
+final class StyleManagerTests: XCTestCase {
+    var style: MapboxMaps.StyleManager!
     var styleManager: MockStyleManager!
     var sourceManager: MockStyleSourceManager!
+    @TestSignal var onStyleLoaded: Signal<StyleDataLoaded>
 
     override func setUp() {
         styleManager = MockStyleManager()
         sourceManager = MockStyleSourceManager()
-        style = Style(with: styleManager, sourceManager: sourceManager)
+        style = StyleManager(with: styleManager, sourceManager: sourceManager)
     }
 
     override func tearDown() {
+        resetAllStubs()
         styleManager = nil
         sourceManager = nil
         style = nil
     }
 
     func testSetProjection() throws {
-        let projectionName = StyleProjectionName.allCases.randomElement()!
+        let projectionName = StyleProjectionName.random()
+        let projection = StyleProjection(name: projectionName)
 
-        try style.setProjection(StyleProjection(name: projectionName))
+        try style.setProjection(projection)
 
-        XCTAssertEqual(styleManager.setStyleProjectionPropertyStub.invocations.count, 1)
-        XCTAssertEqual(styleManager.setStyleProjectionPropertyStub.invocations.first?.parameters.property, "name")
-        XCTAssertEqual(styleManager.setStyleProjectionPropertyStub.invocations.first?.parameters.value as? String, projectionName.rawValue)
+        XCTAssertEqual(styleManager.setStyleProjectionPropertiesStub.invocations.count, 1)
+        XCTAssertEqual(
+            styleManager.setStyleProjectionPropertiesStub.invocations.first?.parameters as? [String: String],
+            ["name": projectionName.rawValue]
+        )
     }
 
     func testProjection() {
-        let projectionName = StyleProjectionName.allCases.randomElement()!
+        let projectionName = StyleProjectionName.random()
         styleManager.getStyleProjectionPropertyStub.defaultReturnValue = StylePropertyValue(
             value: projectionName.rawValue,
             kind: .constant
         )
 
-        XCTAssertEqual(style.projection.name, projectionName)
+        XCTAssertEqual(style.projection?.name, projectionName)
 
         styleManager.getStyleProjectionPropertyStub.defaultReturnValue = StylePropertyValue(
             value: projectionName.rawValue,
             kind: .undefined
         )
 
-        XCTAssertEqual(style.projection.name, .mercator)
+        XCTAssertNil(style.projection?.name)
     }
 
     func testStyleIsLoaded() {
         let isStyleLoaded = Bool.random()
         styleManager.isStyleLoadedStub.defaultReturnValue = isStyleLoaded
-        XCTAssertEqual(style.isLoaded, isStyleLoaded)
+        XCTAssertEqual(style.isStyleLoaded, isStyleLoaded)
     }
 
     func testGetStyleURI() {
         // Empty URI
-        XCTAssertNil(style.uri)
+        XCTAssertNil(style.styleURI)
 
         // Valid URL
         styleManager.getStyleURIStub.defaultReturnValue = "test://testStyle"
-        XCTAssertNotNil(style.uri)
+        XCTAssertNotNil(style.styleURI)
     }
 
-    func testSetStyleURI() {
+    func testSetStyleURI() throws {
+        styleManager.setStyleURIStub.defaultSideEffect = {
+            self.styleManager.getStyleURIStub.defaultReturnValue = $0.parameters.value
+        }
         // Invalid (nil) URI -> will not update StyleURI
-        style.uri = StyleURI(rawValue: "Not A Valid Style URL")
-        XCTAssertNotEqual(style.uri?.rawValue, "Not A Valid Style URL")
+        style.styleURI = StyleURI(rawValue: "Not A Valid Style URL")
+        XCTAssertNotEqual(style.styleURI?.rawValue, "Not A Valid Style URL")
 
         // Valid URI
-        style.uri = StyleURI(rawValue: "test://newTestStyle")
-        XCTAssertEqual(styleManager.setStyleURIForUriStub.invocations.last!.parameters, "test://newTestStyle")
+        let validURI = StyleURI(rawValue: "test://newTestStyle")
+        style.styleURI = validURI
+        let params = try XCTUnwrap(styleManager.setStyleURIStub.invocations.last).parameters
+        XCTAssertEqual(params.value, validURI?.rawValue)
+        XCTAssertEqual(style.styleURI, validURI)
     }
 
     func testGetSetStyleJSON() {
-        styleManager.getStyleJSONStub.defaultReturnValue = "{\"foo\":\"bar\"}"
-        XCTAssertEqual(style.JSON, "{\"foo\":\"bar\"}")
+        styleManager.setStyleJSONStub.defaultSideEffect = {
+            self.styleManager.getStyleJSONStub.defaultReturnValue = $0.parameters.value
+        }
 
-        style.JSON = "{\"foo\":\"foo\"}"
-        XCTAssertEqual(styleManager.setStyleJSONForJsonStub.invocations.last?.parameters, "{\"foo\":\"foo\"}")
+        let json = """
+        {"foo": "bar"}
+        """
+        style.styleJSON = json
+        XCTAssertEqual(style.styleJSON, json)
+        XCTAssertEqual(styleManager.setStyleJSONStub.invocations.last?.parameters.value, json)
     }
 
     func testDefaultCamera() {
         let stubCamera = MapboxMaps.CameraOptions.random()
-        styleManager.getStyleDefaultCameraStub.defaultReturnValue = MapboxCoreMaps.CameraOptions(stubCamera)
+        styleManager.getStyleDefaultCameraStub.defaultReturnValue = CoreCameraOptions(stubCamera)
 
-        XCTAssertEqual(style.defaultCamera, stubCamera)
+        XCTAssertEqual(style.styleDefaultCamera, stubCamera)
     }
 
     func testGetStyleTransition() {
-        let stubTransition = MapboxCoreMaps.TransitionOptions(
+        let stubTransition = TransitionOptions(
             duration: .random(in: 0...300),
             delay: .random(in: 0...300),
             enablePlacementTransitions: .random())
-        styleManager.getStyleTransitionStub.defaultReturnValue = stubTransition
+        styleManager.getStyleTransitionStub.defaultReturnValue = stubTransition.coreOptions
 
-        XCTAssertEqual(style.transition, stubTransition)
+        XCTAssertEqual(style.styleTransition, stubTransition)
     }
 
-    func testSetStyleTransition() {
-        let stubTransition = MapboxCoreMaps.TransitionOptions(
+    func testSetStyleTransition() throws {
+        let stubTransition = TransitionOptions(
             duration: .random(in: 0...300),
             delay: .random(in: 0...300),
             enablePlacementTransitions: .random())
-        style.transition = stubTransition
+        style.styleTransition = stubTransition
 
-        XCTAssertEqual(styleManager.setStyleTransitionStub.invocations.last?.parameters, stubTransition)
+        let coreTransitionOptions = try XCTUnwrap(styleManager.setStyleTransitionStub.invocations.last?.parameters)
+        XCTAssertEqual(TransitionOptions(coreTransitionOptions), stubTransition)
     }
 
     // MARK: Layer
@@ -174,7 +191,7 @@ final class StyleTests: XCTestCase {
 
     func testStyleGetSource() throws {
         let id = "foo"
-        let source = GeoJSONSource()
+        let source = GeoJSONSource(id: id)
         sourceManager.sourceStub.defaultReturnValue = source
 
         let returnedSource = try style.source(withId: id)
@@ -186,7 +203,7 @@ final class StyleTests: XCTestCase {
 
     func testStyleTypedGetSource() throws {
         let id = "foo"
-        sourceManager.typedSourceStub.defaultReturnValue = GeoJSONSource()
+        sourceManager.typedSourceStub.defaultReturnValue = GeoJSONSource(id: id)
 
         let source = try style.source(withId: id, type: GeoJSONSource.self)
 
@@ -212,13 +229,16 @@ final class StyleTests: XCTestCase {
     func testStyleCanAddTypedStyleSource() throws {
         let id = "dummy-source-id"
         let type = SourceType.random()
-        let source = try type.sourceType.init(jsonObject: ["type": type.rawValue])
+        guard let source = try type.sourceType?.init(jsonObject: ["type": type.rawValue, "id": id]) else {
+            XCTFail("Expected to return a valid source")
+            return
+        }
 
-        try style.addSource(source, id: id)
+        try style.addSource(source)
 
         XCTAssertEqual(sourceManager.addSourceStub.invocations.count, 1)
         let params = try XCTUnwrap(sourceManager.addSourceStub.invocations.first?.parameters)
-        XCTAssertEqual(params.id, id)
+        XCTAssertEqual(params.source.id, id)
         XCTAssertEqual(params.source.type, type)
     }
 
@@ -247,12 +267,28 @@ final class StyleTests: XCTestCase {
         let id = String.randomASCII(withLength: 10)
         let geoJSONObject = GeoJSONObject.featureCollection(FeatureCollection(features: []))
 
-        try style.updateGeoJSONSource(withId: id, geoJSON: geoJSONObject)
+        style.updateGeoJSONSource(withId: id, geoJSON: geoJSONObject)
 
         XCTAssertEqual(sourceManager.updateGeoJSONSourceStub.invocations.count, 1)
         let params = try XCTUnwrap(sourceManager.updateGeoJSONSourceStub.invocations.first?.parameters)
         XCTAssertEqual(params.id, id)
-        XCTAssertEqual(params.geoJSON, geoJSONObject)
+        XCTAssertEqual(params.data, geoJSONObject.sourceData)
+    }
+
+    func testUpdateGeoJSONSourceWithDataID() throws {
+        let id = "TestSourceID"
+        let geoJSONObject = GeoJSONObject.featureCollection(FeatureCollection(features: []))
+        let dataId = "TestdataId"
+
+        style.updateGeoJSONSource(withId: id, geoJSON: geoJSONObject, dataId: dataId)
+
+        XCTAssertEqual(sourceManager.updateGeoJSONSourceStub.invocations.count, 1)
+        let params = try XCTUnwrap(sourceManager.updateGeoJSONSourceStub.invocations.first?.parameters)
+        XCTAssertEqual(params.id, id)
+        let data = params.data
+        let data2 = geoJSONObject.sourceData
+        XCTAssertEqual(data, data2)
+        XCTAssertEqual(params.dataId, dataId)
     }
 
     func testGetSourceProperty() throws {
@@ -312,11 +348,11 @@ final class StyleTests: XCTestCase {
     // MARK: Light
 
     func testStyleCanSetLightSourceProperties() {
-        styleManager.setStyleLightForPropertiesStub.defaultReturnValue = Expected(value: NSNull())
-        XCTAssertNoThrow(try style.setLight(properties: ["foo": "bar"]))
+        styleManager.setStyleLightPropertyForIdStub.defaultReturnValue = Expected(value: NSNull())
+        XCTAssertNoThrow(try style.setLightProperty(for: "id", property: "foo", value: "bar"))
 
-        styleManager.setStyleLightForPropertiesStub.defaultReturnValue = Expected(error: "Cannot set light source properties")
-        XCTAssertThrowsError(try style.setLight(properties: ["foo": "bar"]))
+        styleManager.setStyleLightPropertyForIdStub.defaultReturnValue = Expected(error: "Cannot set light source properties")
+        XCTAssertThrowsError(try style.setLightProperty(for: "id", property: "foo", value: "bar"))
     }
 
     // MARK: Terrain
@@ -325,8 +361,16 @@ final class StyleTests: XCTestCase {
         styleManager.setStyleTerrainForPropertiesStub.defaultReturnValue = Expected(value: NSNull())
         XCTAssertNoThrow(try style.setTerrain(properties: ["foo": "bar"]))
 
-        styleManager.setStyleTerrainForPropertiesStub.defaultReturnValue = Expected(error: "Cannot set light source properties")
+        styleManager.setStyleTerrainForPropertiesStub.defaultReturnValue = Expected(error: "Cannot set terrain source properties")
         XCTAssertThrowsError(try style.setTerrain(properties: ["foo": "bar"]))
+    }
+
+    func testStyleCanSetTerrainSourceProperty() {
+        styleManager.setStyleTerrainPropertyStub.defaultReturnValue = Expected(value: NSNull())
+        XCTAssertNoThrow(try style.setTerrainProperty("foo", value: "bar"))
+
+        styleManager.setStyleTerrainPropertyStub.defaultReturnValue = Expected(error: "Cannot set terrain source property")
+        XCTAssertThrowsError(try style.setTerrainProperty("foo", value: "bar"))
     }
 
     // MARK: Custom Geometry
@@ -388,6 +432,38 @@ final class StyleTests: XCTestCase {
         )
     }
 
+    func testStyleCanAddCustomRasterSource() {
+        let options = CustomRasterSourceOptions(
+            clientCallback: CustomRasterSourceClient.fromCustomRasterSourceTileStatusChangedCallback { _, _ in }
+        )
+
+        styleManager.addStyleCustomRasterSourceStub.defaultReturnValue = Expected(value: NSNull())
+        XCTAssertNoThrow(try style.addCustomRasterSource(
+            forSourceId: "dummy-source-id",
+            options: options)
+        )
+
+        styleManager.addStyleCustomRasterSourceStub.defaultReturnValue = Expected(error: "Cannot add custom raster source")
+        XCTAssertThrowsError(try style.addCustomRasterSource(
+            forSourceId: "dummy-source-id",
+            options: options)
+        )
+    }
+
+    func testStyleCanSetCustomRasterSourceTileData() {
+        styleManager.setStyleCustomRasterSourceTileDataStub.defaultReturnValue = Expected(value: NSNull())
+        XCTAssertNoThrow(try style.setCustomRasterSourceTileData(
+            forSourceId: "dummy-source-id",
+            tiles: [])
+        )
+
+        styleManager.setStyleCustomRasterSourceTileDataStub.defaultReturnValue = Expected(error: "Cannot set custom raster source tile data")
+        XCTAssertThrowsError(try style.setCustomRasterSourceTileData(
+            forSourceId: "dummy-source-id",
+            tiles: [])
+        )
+    }
+
     func testStyleCanUpdateLayer() throws {
         styleManager.getStyleLayerPropertiesStub.defaultReturnValue = Expected(value: NSDictionary(dictionary: [
             "id": "dummy-layer-id",
@@ -421,5 +497,250 @@ final class StyleTests: XCTestCase {
 
         let layoutProperties = try XCTUnwrap(rootProperties["layout"] as? [String: Any])
         XCTAssertEqual(layoutProperties["visibility"] as? String, "visible", "visibility is not reset and should keep old value")
+    }
+
+    func testAddImageWithStretches() throws {
+        let image = UIImage.empty
+        let id = UUID().uuidString
+        let sdf = Bool.random()
+        let stretchX = [ImageStretches(first: .random(in: 1...100), second: .random(in: 1...100))]
+        let stretchY = [ImageStretches(first: .random(in: 1...100), second: .random(in: 1...100))]
+        let content = ImageContent(
+            left: .random(in: 1...100),
+            top: .random(in: 1...100),
+            right: .random(in: 1...100),
+            bottom: .random(in: 1...100)
+        )
+
+        try style.addImage(image, id: id, sdf: sdf, stretchX: stretchX, stretchY: stretchY, content: content)
+
+        XCTAssertEqual(styleManager.addStyleImageStub.invocations.count, 1)
+        let params = try XCTUnwrap(styleManager.addStyleImageStub.invocations.first?.parameters)
+        XCTAssertEqual(params.imageId, id)
+        XCTAssertEqual(params.sdf, sdf)
+        XCTAssertEqual(params.stretchX, stretchX)
+        XCTAssertEqual(params.stretchY, stretchY)
+        XCTAssertEqual(params.content, content)
+    }
+
+    func testAddImageWithInsets() throws {
+        let image = UIImage.empty
+        let id = UUID().uuidString
+        let sdf = Bool.random()
+        let insets = UIEdgeInsets(top: 10, left: 20, bottom: 10, right: 2)
+
+        try style.addImage(image, id: id, sdf: sdf, contentInsets: insets)
+
+        XCTAssertEqual(styleManager.addStyleImageStub.invocations.count, 1)
+        let params = try XCTUnwrap(styleManager.addStyleImageStub.invocations.first?.parameters)
+        XCTAssertEqual(params.imageId, id)
+        XCTAssertEqual(params.sdf, sdf)
+        XCTAssertEqual(params.stretchX, [ImageStretches(first: 0, second: 1)])
+        XCTAssertEqual(params.stretchY, [ImageStretches(first: 0, second: 1)])
+    }
+
+    func testSet3DLights() throws {
+        let ambientLight = AmbientLight(id: UUID().uuidString)
+        let directionalLight = DirectionalLight(id: UUID().uuidString)
+
+        styleManager.setStyleLightsStub.defaultReturnValue = Expected(value: NSNull())
+        XCTAssertNoThrow(try style.setLights(ambient: ambientLight, directional: directionalLight))
+        let lights = try XCTUnwrap(styleManager.setStyleLightsStub.invocations.last?.parameters as? [[String: Any]])
+        XCTAssertTrue(lights.contains(where: { $0["id"] as? String == ambientLight.id && $0["type"] as? String == "ambient" }))
+        XCTAssertTrue(lights.contains(where: { $0["id"] as? String == directionalLight.id && $0["type"] as? String == "directional" }))
+
+        styleManager.setStyleLightsStub.reset()
+        styleManager.setStyleLightsStub.defaultReturnValue = Expected(error: "Cannot add 3D lights")
+        XCTAssertThrowsError(try style.setLights(ambient: ambientLight, directional: directionalLight))
+    }
+
+    func testGet3DLights() {
+        styleManager.getStyleLightsStub.defaultReturnValue = [
+            .init(id: "default-directional-light", type: "directional"),
+            .init(id: "default-ambient-light", type: "ambient")
+        ]
+        let lights = style.allLightIdentifiers
+        XCTAssertEqual(styleManager.getStyleLightsStub.invocations.count, 1)
+        XCTAssertEqual(lights.map(\.id), ["default-directional-light", "default-ambient-light"])
+    }
+
+    func testSet3DLightProperty() throws {
+        let id = UUID().uuidString
+        let property = String.randomASCII(withLength: 19)
+        let value = String.randomASCII(withLength: 19)
+
+        styleManager.setStyleLightPropertyForIdStub.defaultReturnValue = Expected(value: NSNull())
+        XCTAssertNoThrow(try style.setLightProperty(for: id, property: property, value: value))
+        let invocation = try XCTUnwrap(styleManager.setStyleLightPropertyForIdStub.invocations.last)
+        XCTAssertEqual(invocation.parameters.id, id)
+        XCTAssertEqual(invocation.parameters.property, property)
+        XCTAssertEqual(invocation.parameters.value as? String, value)
+
+        styleManager.setStyleLightPropertyForIdStub.defaultReturnValue = Expected(error: "Cannot set property for 3D light")
+        XCTAssertThrowsError(try style.setLightProperty(for: id, property: property, value: value))
+    }
+
+    func testGet3DLightProperty() throws {
+        let id = UUID().uuidString
+        let property = String.randomASCII(withLength: 19)
+        let stringValue = String.randomASCII(withLength: 19)
+
+        styleManager.getStyleLightPropertyForIdStub.defaultReturnValue = .init(value: stringValue, kind: .constant)
+        let propertyValue = style.lightProperty(for: id, property: property)
+        let invocation = try XCTUnwrap(styleManager.getStyleLightPropertyForIdStub.invocations.last)
+        XCTAssertEqual(invocation.parameters.id, id)
+        XCTAssertEqual(invocation.parameters.property, property)
+        XCTAssertEqual(propertyValue as? String, stringValue)
+    }
+
+    func testAddStyleModel() {
+        let modelId = UUID().uuidString
+        let modelUri = UUID().uuidString
+
+        XCTAssertNoThrow(try style.addStyleModel(modelId: modelId, modelUri: modelUri))
+        XCTAssertEqual(styleManager.addStyleModelStub.invocations.count, 1)
+        XCTAssertEqual(styleManager.addStyleModelStub.invocations.first?.parameters.modelId, modelId)
+        XCTAssertEqual(styleManager.addStyleModelStub.invocations.first?.parameters.modelUri, modelUri)
+    }
+
+    func testRemoveStyleModel() throws {
+        let modelId = UUID().uuidString
+
+        try style.removeStyleModel(modelId: modelId)
+        XCTAssertEqual(styleManager.removeStyleModelStub.invocations.count, 1)
+        XCTAssertEqual(styleManager.removeStyleModelStub.invocations.first?.parameters.modelId, modelId)
+    }
+
+    func testHasStyleModel() throws {
+        let modelId = UUID().uuidString
+
+        _ = style.hasStyleModel(modelId: modelId)
+        XCTAssertEqual(styleManager.hasStyleModelStub.invocations.count, 1)
+        XCTAssertEqual(styleManager.hasStyleModelStub.invocations.first?.parameters.modelId, modelId)
+    }
+
+    func testAddGeoJSONSourceFeatures() throws {
+        // given
+        let sourceId = String.randomASCII(withLength: 10)
+        let dataId = String.randomASCII(withLength: 11)
+        let point = Point(.random())
+        let featureIdentifier = Double.random(in: 0...1000)
+        var feature = Feature.init(geometry: point.geometry)
+        feature.identifier = .number(featureIdentifier)
+
+        // when
+        style.addGeoJSONSourceFeatures(forSourceId: sourceId, features: [feature], dataId: dataId)
+
+        // then
+        XCTAssertEqual(sourceManager.addGeoJSONSourceFeaturesStub.invocations.count, 1)
+        let parameters = try XCTUnwrap(sourceManager.addGeoJSONSourceFeaturesStub.invocations.first?.parameters)
+        XCTAssertEqual(parameters.sourceId, sourceId)
+        XCTAssertEqual(parameters.features, [feature])
+        XCTAssertEqual(parameters.dataId, dataId)
+    }
+
+    func testUpdateGeoJSONSourceFeatures() throws {
+        // given
+        let sourceId = String.randomASCII(withLength: 10)
+        let dataId = String.randomASCII(withLength: 11)
+        let point = Point(.random())
+        let featureIdentifier = Double.random(in: 0...1000)
+        var feature = Feature.init(geometry: point.geometry)
+        feature.identifier = .number(featureIdentifier)
+
+        // when
+        style.updateGeoJSONSourceFeatures(forSourceId: sourceId, features: [feature], dataId: dataId)
+
+        // then
+        XCTAssertEqual(sourceManager.updateGeoJSONSourceFeaturesStub.invocations.count, 1)
+        let parameters = try XCTUnwrap(sourceManager.updateGeoJSONSourceFeaturesStub.invocations.first?.parameters)
+        XCTAssertEqual(parameters.sourceId, sourceId)
+        XCTAssertEqual(parameters.features, [feature])
+        XCTAssertEqual(parameters.dataId, dataId)
+    }
+
+    func testRemoveGeoJSONSourceFeatures() throws {
+        // given
+        let sourceId = String.randomASCII(withLength: 10)
+        let dataId = String.randomASCII(withLength: 11)
+        let featureIdentifiers = (0...10).map { String.randomASCII(withLength: $0) }
+
+        // when
+        style.removeGeoJSONSourceFeatures(forSourceId: sourceId, featureIds: featureIdentifiers, dataId: dataId)
+
+        // then
+        XCTAssertEqual(sourceManager.removeGeoJSONSourceFeaturesStub.invocations.count, 1)
+        let parameters = try XCTUnwrap(sourceManager.removeGeoJSONSourceFeaturesStub.invocations.first?.parameters)
+        XCTAssertEqual(parameters.sourceId, sourceId)
+        XCTAssertEqual(parameters.featureIds, featureIdentifiers)
+        XCTAssertEqual(parameters.dataId, dataId)
+    }
+
+    // MARK: Style Imports
+    func testGetStyleImports() {
+        _ = style.styleImports
+        XCTAssertEqual(styleManager.getStyleImportsStub.invocations.count, 1)
+    }
+
+    func testRemoveStyleImport() {
+        let importId = UUID().uuidString
+
+        try? style.removeStyleImport(withId: importId)
+        XCTAssertEqual(styleManager.removeStyleImportStub.invocations.count, 1)
+        XCTAssertEqual(styleManager.removeStyleImportStub.invocations.first?.parameters.importId, importId)
+    }
+
+    func testGetStyleImportSchema() {
+        let importId = UUID().uuidString
+
+        let importSchema = try? style.getStyleImportSchema(for: importId)
+        XCTAssertEqual(styleManager.getStyleImportSchemaStub.invocations.count, 1)
+        XCTAssertEqual(styleManager.getStyleImportSchemaStub.invocations.first?.parameters.importId, importId)
+        XCTAssertEqual(importSchema as? NSDictionary, NSDictionary(dictionary: ["stub": "stub"]))
+    }
+
+    func testGetStyleImportConfigProperties() {
+        let importId = UUID().uuidString
+
+        let importConfigProperties = try? style.getStyleImportConfigProperties(for: importId)
+        XCTAssertEqual(styleManager.getStyleImportConfigPropertiesStub.invocations.count, 1)
+        XCTAssertEqual(styleManager.getStyleImportConfigPropertiesStub.invocations.first?.parameters.importId, importId)
+        XCTAssertEqual(importConfigProperties?.first?.key, "stub")
+        XCTAssertEqual(importConfigProperties?.first?.value.value as? String, "stub")
+        XCTAssertEqual(importConfigProperties?.first?.value.kind, .undefined)
+    }
+
+    func testGetStyleImportConfigProperty() {
+        let importId = UUID().uuidString
+        let config = UUID().uuidString
+
+        let importConfig = try? style.getStyleImportConfigProperty(for: importId, config: config)
+        XCTAssertEqual(styleManager.getStyleImportConfigPropertyStub.invocations.count, 1)
+        XCTAssertEqual(styleManager.getStyleImportConfigPropertyStub.invocations.first?.parameters.importId, importId)
+        XCTAssertEqual(styleManager.getStyleImportConfigPropertyStub.invocations.first?.parameters.config, config)
+        XCTAssertEqual(importConfig?.value as? String, "stub")
+        XCTAssertEqual(importConfig?.kind, .undefined)
+    }
+
+    func testSetStyleImportConfigProperties() {
+        let importId = UUID().uuidString
+        let configs = [UUID().uuidString: UUID().uuidString]
+
+        try? style.setStyleImportConfigProperties(for: importId, configs: configs)
+        XCTAssertEqual(styleManager.setStyleImportConfigPropertiesForImportIdStub.invocations.count, 1)
+        XCTAssertEqual(styleManager.setStyleImportConfigPropertiesForImportIdStub.invocations.first?.parameters.importId, importId)
+        XCTAssertEqual(styleManager.setStyleImportConfigPropertiesForImportIdStub.invocations.first?.parameters.configs as? [String: String], configs)
+    }
+
+    func testSetStyleImportConfigProperty() {
+        let importId = UUID().uuidString
+        let config = UUID().uuidString
+        let value = UUID().uuidString
+
+        try? style.setStyleImportConfigProperty(for: importId, config: config, value: value)
+        XCTAssertEqual(styleManager.setStyleImportConfigPropertyForImportIdStub.invocations.count, 1)
+        XCTAssertEqual(styleManager.setStyleImportConfigPropertyForImportIdStub.invocations.first?.parameters.importId, importId)
+        XCTAssertEqual(styleManager.setStyleImportConfigPropertyForImportIdStub.invocations.first?.parameters.config, config)
+        XCTAssertEqual(styleManager.setStyleImportConfigPropertyForImportIdStub.invocations.first?.parameters.value as? String, value)
     }
 }

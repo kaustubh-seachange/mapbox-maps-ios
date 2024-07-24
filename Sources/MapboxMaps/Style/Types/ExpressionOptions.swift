@@ -1,6 +1,6 @@
-import UIKit
+import Foundation
 
-extension Expression {
+extension Exp {
 
     public enum Option: Codable, Equatable {
         case format(FormatOptions)
@@ -46,13 +46,13 @@ extension Expression {
 public struct FormatOptions: Codable, Equatable, ExpressionArgumentConvertible {
 
     /// Applies a scaling factor on text-size as specified by the root layout property.
-    public var fontScale: Double?
+    public var fontScale: Value<Double>?
 
-    /// Overrides the font stack specified by the root layout property
-    public var textFont: [String]?
+    /// Overrides the font stack specified by the root layout property.
+    public var textFont: Value<[String]>?
 
     /// Overrides the color specified by the root paint property.
-    public var textColor: StyleColor?
+    public var textColor: Value<StyleColor>?
 
     internal enum CodingKeys: String, CodingKey {
         case fontScale = "font-scale"
@@ -60,18 +60,17 @@ public struct FormatOptions: Codable, Equatable, ExpressionArgumentConvertible {
         case textColor = "text-color"
     }
 
-    public var expressionArguments: [Expression.Argument] {
+    public var expressionArguments: [Exp.Argument] {
         return [.option(.format(self))]
     }
 
-    public init(fontScale: Double? = nil, textFont: [String]? = nil, textColor: UIColor? = nil) {
+    public init(fontScale: Value<Double>? = nil, textFont: Value<[String]>? = nil, textColor: Value<StyleColor>? = nil) {
         self.fontScale = fontScale
         self.textFont = textFont
-
-        if let textColor = textColor {
-            self.textColor = StyleColor(textColor)
-        }
+        self.textColor = textColor
     }
+
+    public init() {}
 }
 
 public struct NumberFormatOptions: Codable, Equatable, ExpressionArgumentConvertible {
@@ -88,7 +87,7 @@ public struct NumberFormatOptions: Codable, Equatable, ExpressionArgumentConvert
     /// Maximum number of fractional digits to include.
     public var maxFractionDigits: Int?
 
-    public var expressionArguments: [Expression.Argument] {
+    public var expressionArguments: [Exp.Argument] {
         return [.option(.numberFormat(self))]
     }
 
@@ -125,7 +124,7 @@ public struct CollatorOptions: Codable, Equatable, ExpressionArgumentConvertible
         case diacriticSensitive = "diacritic-sensitive"
     }
 
-    public var expressionArguments: [Expression.Argument] {
+    public var expressionArguments: [Exp.Argument] {
         return [.option(.collator(self))]
     }
 

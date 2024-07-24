@@ -1,11 +1,11 @@
 // This file is generated.
 import XCTest
-@testable import MapboxMaps
+@_spi(Experimental) @testable import MapboxMaps
 
 final class VectorSourceTests: XCTestCase {
 
     func testEncodingAndDecoding() {
-        var source = VectorSource()
+        var source = VectorSource(id: "test-source")
         source.url = String.testSourceValue()
         source.tiles = [String].testSourceValue()
         source.bounds = [Double].testSourceValue()
@@ -16,6 +16,7 @@ final class VectorSourceTests: XCTestCase {
         source.promoteId = PromoteId.testSourceValue()
         source.volatile = Bool.testSourceValue()
         source.prefetchZoomDelta = Double.testSourceValue()
+        source.tileCacheBudget = TileCacheBudgetSize.testSourceValue()
         source.minimumTileUpdateInterval = Double.testSourceValue()
         source.maxOverscaleFactorForParentTiles = Double.testSourceValue()
         source.tileRequestsDelay = Double.testSourceValue()
@@ -46,6 +47,7 @@ final class VectorSourceTests: XCTestCase {
             XCTAssert(decodedSource.promoteId == PromoteId.testSourceValue())
             XCTAssert(decodedSource.volatile == Bool.testSourceValue())
             XCTAssert(decodedSource.prefetchZoomDelta == Double.testSourceValue())
+            XCTAssert(decodedSource.tileCacheBudget == TileCacheBudgetSize.testSourceValue())
             XCTAssert(decodedSource.minimumTileUpdateInterval == Double.testSourceValue())
             XCTAssert(decodedSource.maxOverscaleFactorForParentTiles == Double.testSourceValue())
             XCTAssert(decodedSource.tileRequestsDelay == Double.testSourceValue())
@@ -53,6 +55,33 @@ final class VectorSourceTests: XCTestCase {
         } catch {
             XCTFail("Failed to decode VectorSource.")
         }
+    }
+
+    func testSetPropertyValueWithFunction() {
+        let source = VectorSource(id: "test-source")
+            .url(String.testSourceValue())
+            .tiles([String].testSourceValue())
+            .minzoom(Double.testSourceValue())
+            .maxzoom(Double.testSourceValue())
+            .volatile(Bool.testSourceValue())
+            .prefetchZoomDelta(Double.testSourceValue())
+            .tileCacheBudget(TileCacheBudgetSize.testSourceValue())
+            .minimumTileUpdateInterval(Double.testSourceValue())
+            .maxOverscaleFactorForParentTiles(Double.testSourceValue())
+            .tileRequestsDelay(Double.testSourceValue())
+            .tileNetworkRequestsDelay(Double.testSourceValue())
+
+        XCTAssertEqual(source.url, String.testSourceValue())
+        XCTAssertEqual(source.tiles, [String].testSourceValue())
+        XCTAssertEqual(source.minzoom, Double.testSourceValue())
+        XCTAssertEqual(source.maxzoom, Double.testSourceValue())
+        XCTAssertEqual(source.volatile, Bool.testSourceValue())
+        XCTAssertEqual(source.prefetchZoomDelta, Double.testSourceValue())
+        XCTAssertEqual(source.tileCacheBudget, TileCacheBudgetSize.testSourceValue())
+        XCTAssertEqual(source.minimumTileUpdateInterval, Double.testSourceValue())
+        XCTAssertEqual(source.maxOverscaleFactorForParentTiles, Double.testSourceValue())
+        XCTAssertEqual(source.tileRequestsDelay, Double.testSourceValue())
+        XCTAssertEqual(source.tileNetworkRequestsDelay, Double.testSourceValue())
     }
 }
 

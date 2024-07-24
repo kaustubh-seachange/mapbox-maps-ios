@@ -10,7 +10,7 @@ let cameraOptionsTestValue = CameraOptions(
     pitch: 10)
 
 let cameraStateTestValue = CameraState(
-    MapboxCoreMaps.CameraState(
+    CoreCameraState(
         center: .init(
             latitude: 10,
             longitude: 10),
@@ -31,13 +31,15 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     var mapboxMap: MockMapboxMap!
     var mainQueue: MockMainQueue!
     var animator: BasicCameraAnimatorImpl!
-    // swiftlint:disable:next weak_delegate
-    var delegate: MockBasicCameraAnimatorDelegate!
+    private var recordedCameraAnimatorStatus: [CameraAnimatorStatus] = []
+
+    var animationImpl: BasicCameraAnimatorImpl.Animation?
+    private var cancelables: Set<AnyCancelable> = []
 
     override func setUp() {
         super.setUp()
         propertyAnimator = MockPropertyAnimator()
-        owner = .random()
+        owner = .init(rawValue: UUID().uuidString)
         cameraView = MockCameraView()
         mapboxMap = MockMapboxMap()
         mainQueue = MockMainQueue()
@@ -46,19 +48,24 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
             owner: owner,
             mapboxMap: mapboxMap,
             mainQueue: mainQueue,
-            cameraView: cameraView)
-        delegate = MockBasicCameraAnimatorDelegate()
-        animator.delegate = delegate
+            cameraView: cameraView,
+            animation: { transition in
+                self.animationImpl?(&transition)
+            })
+        animator.onCameraAnimatorStatusChanged
+            .observe { [unowned self] in self.recordedCameraAnimatorStatus.append($0) }
+            .store(in: &cancelables)
     }
 
     override func tearDown() {
-        delegate = nil
         animator = nil
+        animationImpl = nil
         mainQueue = nil
         mapboxMap = nil
         cameraView = nil
         owner = nil
         propertyAnimator = nil
+        recordedCameraAnimatorStatus = []
         super.tearDown()
     }
 
@@ -84,7 +91,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testStartAndStopAnimation() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
 
@@ -95,45 +102,43 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
         XCTAssertEqual(propertyAnimator.addCompletionStub.invocations.count, 1)
         XCTAssertNotNil(animator?.transition)
         XCTAssertEqual(animator?.transition?.toCameraOptions.zoom, 10)
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 1)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStartRunningStub.invocations.first?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started])
 
         animator.stopAnimation()
         XCTAssertEqual(propertyAnimator.stopAnimationStub.invocations.count, 1)
         XCTAssertEqual(propertyAnimator.finishAnimationStub.invocations.count, 1)
         XCTAssertEqual(propertyAnimator.finishAnimationStub.invocations.first?.parameters, .current)
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStopRunningStub.invocations.count, 1)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStopRunningStub.invocations.first?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .stopped(reason: .cancelled)])
     }
 
     func testStartAndStopAnimationAfterDelay() throws {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
-        let randomInterval: TimeInterval = .random(in: 0...10)
-        animator.startAnimation(afterDelay: randomInterval)
+        animator.startAnimation(afterDelay: 3)
 
         XCTAssertEqual(self.propertyAnimator.startAnimationStub.invocations.count, 1)
         XCTAssertEqual(self.propertyAnimator.addAnimationsStub.invocations.count, 1)
         XCTAssertEqual(self.propertyAnimator.addCompletionStub.invocations.count, 1)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started])
 
         self.animator.stopAnimation()
 
         XCTAssertEqual(self.propertyAnimator.stopAnimationStub.invocations.count, 1)
         XCTAssertEqual(self.propertyAnimator.finishAnimationStub.invocations.count, 1)
         XCTAssertEqual(self.propertyAnimator.finishAnimationStub.invocations.first?.parameters, .current)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .stopped(reason: .cancelled)])
     }
 
     func testCompletionBlockCalledForStartAndStopAfterDelay() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
 
         let completion = Stub<UIViewAnimatingPosition, Void>()
         animator.addCompletion(completion.call(with:))
 
-        let randomInterval: TimeInterval = .random(in: 1...10)
-        animator.startAnimation(afterDelay: randomInterval)
+        animator.startAnimation(afterDelay: 5)
 
         animator.stopAnimation()
 
@@ -141,7 +146,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testAddCompletionToRunningAnimator() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         animator.startAnimation()
@@ -155,7 +160,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testAddCompletionToPausedAnimator() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         animator.startAnimation()
@@ -170,7 +175,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testAddCompletionToCanceledAnimator() throws {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         animator.startAnimation()
@@ -188,7 +193,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testAddCompletionToCompletedAnimator() throws {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         animator.startAnimation()
@@ -214,8 +219,8 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
 
         XCTAssertEqual(propertyAnimator.stopAnimationStub.invocations.count, 0)
         XCTAssertEqual(propertyAnimator.finishAnimationStub.invocations.count, 0)
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStopRunningStub.invocations.count, 0)
         XCTAssertEqual(completion.invocations.map(\.parameters), [.current])
+        XCTAssertTrue(recordedCameraAnimatorStatus.isEmpty)
     }
 
     func testStopAndStartAnimation() {
@@ -227,36 +232,36 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
         XCTAssertEqual(propertyAnimator.addAnimationsStub.invocations.count, 0)
         XCTAssertEqual(propertyAnimator.addCompletionStub.invocations.count, 0)
         XCTAssertNil(animator.transition)
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 0)
+        XCTAssertTrue(recordedCameraAnimatorStatus.isEmpty)
     }
 
     func testStopAndStartAnimationAfterDelay() {
         animator.stopAnimation()
 
-        animator.startAnimation(afterDelay: .random(in: 0...10))
+        animator.startAnimation(afterDelay: 1)
 
         XCTAssertEqual(propertyAnimator.startAnimationAfterDelayStub.invocations.count, 0)
         XCTAssertEqual(propertyAnimator.addAnimationsStub.invocations.count, 0)
         XCTAssertEqual(propertyAnimator.addCompletionStub.invocations.count, 0)
         XCTAssertNil(animator.transition)
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 0)
+        XCTAssertTrue(recordedCameraAnimatorStatus.isEmpty)
     }
 
     func testStartAndStartAnimationAfterDelay() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
         animator.startAnimation()
         propertyAnimator.addAnimationsStub.reset()
         propertyAnimator.addCompletionStub.reset()
-        delegate.basicCameraAnimatorDidStartRunningStub.reset()
 
-        animator.startAnimation(afterDelay: .random(in: 0...10))
+        animator.startAnimation(afterDelay: 2)
 
         XCTAssertEqual(propertyAnimator.startAnimationAfterDelayStub.invocations.count, 0)
         XCTAssertEqual(propertyAnimator.addAnimationsStub.invocations.count, 0)
         XCTAssertEqual(propertyAnimator.addCompletionStub.invocations.count, 0)
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 0)
+
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started])
     }
 
     func testStopAndPauseAnimation() {
@@ -267,10 +272,11 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
         XCTAssertEqual(propertyAnimator.pauseAnimationStub.invocations.count, 0)
         XCTAssertEqual(propertyAnimator.addAnimationsStub.invocations.count, 0)
         XCTAssertEqual(propertyAnimator.addCompletionStub.invocations.count, 0)
+        XCTAssertTrue(recordedCameraAnimatorStatus.isEmpty)
     }
 
     func testStartandPauseAnimationAfterDelay() throws {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
 
@@ -280,10 +286,11 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
 
         XCTAssertEqual(propertyAnimator.pauseAnimationStub.invocations.count, 1)
         XCTAssertEqual(propertyAnimator.stopAnimationStub.invocations.count, 0)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .paused])
     }
 
     func testStartAnimationAfterDelayIsRunning() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         XCTAssertFalse(propertyAnimator.isRunning)
@@ -293,7 +300,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testStartAndPauseAnimationAfterDelayIsNotRunning() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         XCTAssertFalse(propertyAnimator.isRunning)
@@ -306,7 +313,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testStartAndStopAnimationAfterDelayIsNotRunning() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         XCTAssertFalse(propertyAnimator.isRunning)
@@ -320,7 +327,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testStartAnimationAfterDelayStateActive() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         XCTAssertEqual(animator.state, .inactive, "The animator's state should be inactive (0) since it hasn't started. Got \(animator.state.NSNumber).")
@@ -330,7 +337,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testStartAndPauseAnimationAfterDelayStateActive() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         animator.startAnimation(afterDelay: 1)
@@ -340,7 +347,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testStartAndStopAnimationAfterDelayStateInactive() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         animator.startAnimation(afterDelay: 1)
@@ -350,7 +357,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testStartAnimationAfterDelayTransitionNotNil() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         animator.startAnimation(afterDelay: 1)
@@ -358,7 +365,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testStartandPauseAnimationAfterDelayTransitionNotNil() {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraStateTestValue.zoom
         }
         animator.startAnimation(afterDelay: 1)
@@ -367,88 +374,84 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
         XCTAssertNotNil(animator.transition, "The animator's transition property should not be nil after pausing the animation.")
     }
 
-    func testInformsDelegateWhenPausingAndStarting() {
-        animator.addAnimations { (transition) in
+    func testSignalWhenPausingAndStarting() {
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
         animator.pauseAnimation()
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 0)
+        XCTAssertTrue(recordedCameraAnimatorStatus.isEmpty)
 
         animator.startAnimation()
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 1)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStartRunningStub.invocations.first?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started])
     }
 
-    func testInformsDelegateWhenStartingAfterDelay() {
-        animator.addAnimations { (transition) in
+    func testSignalWhenStartingAfterDelay() {
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
         animator.startAnimation(afterDelay: 1)
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 1)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStartRunningStub.invocations.first?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started])
     }
 
-    func testInformsDelegateWhenStartingPausingAndStarting() {
-        animator.addAnimations { (transition) in
+    func testSignalWhenStartingPausingAndStarting() {
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
         animator.startAnimation()
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 1)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStartRunningStub.invocations.first?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started])
 
         animator.pauseAnimation()
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStopRunningStub.invocations.count, 1)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStopRunningStub.invocations.first?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .paused])
 
         animator.startAnimation()
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 2)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStartRunningStub.invocations.last?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .paused, .started])
     }
 
-    func testInformsDelegateWhenPausingAndContinuing() {
-        animator.addAnimations { (transition) in
+    func testSignalWhenPausingAndContinuing() {
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
         animator.pauseAnimation()
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 0)
+        XCTAssertTrue(recordedCameraAnimatorStatus.isEmpty)
 
         animator.continueAnimation(withTimingParameters: nil, durationFactor: 1)
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 1)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStartRunningStub.invocations.first?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started])
     }
 
-    func testInformsDelegateWhenStartingPausingAndContinuing() {
-        animator.addAnimations { (transition) in
+    func testSignalWhenStartingPausingAndContinuingUntilFinished() throws {
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
         animator.startAnimation()
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 1)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStartRunningStub.invocations.first?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started])
 
         animator.pauseAnimation()
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStopRunningStub.invocations.count, 1)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStopRunningStub.invocations.first?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .paused])
 
         animator.continueAnimation(withTimingParameters: nil, durationFactor: 1)
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 2)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStartRunningStub.invocations.last?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .paused, .started])
+
+        let completion = try XCTUnwrap(propertyAnimator.addCompletionStub.invocations.first?.parameters)
+        completion(.end)
+
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .paused, .started, .stopped(reason: .finished)])
     }
 
-    func testInformsDelegateWhenPausingAndStopping() {
-        animator.addAnimations { (transition) in
+    func testSignalWhenPausingAndStopping() {
+        animator.startAnimation()
+
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
         animator.pauseAnimation()
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 0)
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStopRunningStub.invocations.count, 0)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .paused])
 
         animator.stopAnimation()
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStartRunningStub.invocations.count, 0)
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStopRunningStub.invocations.count, 0)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .paused, .stopped(reason: .cancelled)])
     }
 
     func testAnimatorCompletionUpdatesCameraIfAnimationCompletedAtEnd() throws {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
         animator.startAnimation()
@@ -460,7 +463,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testAnimatorCompletionUpdatesCameraIfAnimationCompletedAtStart() throws {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
         animator.startAnimation()
@@ -472,7 +475,7 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testAnimatorCompletionDoesNotUpdateCameraIfAnimationCompletedAtCurrent() throws {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
         animator.startAnimation()
@@ -484,15 +487,14 @@ final class BasicCameraAnimatorImplTests: XCTestCase {
     }
 
     func testAnimatorCompletionInformsDelegate() throws {
-        animator.addAnimations { (transition) in
+        animationImpl = { (transition) in
             transition.zoom.toValue = cameraOptionsTestValue.zoom!
         }
         animator.startAnimation()
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started])
         let completion = try XCTUnwrap(propertyAnimator.addCompletionStub.invocations.first?.parameters)
 
         completion(.current)
-
-        XCTAssertEqual(delegate.basicCameraAnimatorDidStopRunningStub.invocations.count, 1)
-        XCTAssertTrue(delegate.basicCameraAnimatorDidStopRunningStub.invocations.first?.parameters === animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .stopped(reason: .cancelled)])
     }
 }

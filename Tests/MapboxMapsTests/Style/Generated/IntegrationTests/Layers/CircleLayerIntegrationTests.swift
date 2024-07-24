@@ -9,30 +9,27 @@ final class CircleLayerIntegrationTests: MapViewIntegrationTestCase {
     }
 
     internal func testWaitForIdle() throws {
-        let style = try XCTUnwrap(self.style)
-
         let successfullyAddedLayerExpectation = XCTestExpectation(description: "Successfully added CircleLayer to Map")
         successfullyAddedLayerExpectation.expectedFulfillmentCount = 1
 
         let successfullyRetrievedLayerExpectation = XCTestExpectation(description: "Successfully retrieved CircleLayer from Map")
         successfullyRetrievedLayerExpectation.expectedFulfillmentCount = 1
 
-        style.uri = .streets
+        mapView.mapboxMap.styleURI = .streets
 
-        didFinishLoadingStyle = { _ in
+        didFinishLoadingStyle = { mapView in
 
-            var layer = CircleLayer(id: "test-id")
-            layer.source = "some-source"
-            layer.sourceLayer = nil
+            var layer = CircleLayer(id: "test-id", source: "source")
             layer.minZoom = 10.0
             layer.maxZoom = 20.0
             layer.visibility = .constant(.visible)
             layer.circleSortKey = Value<Double>.testConstantValue()
-
             layer.circleBlur = Value<Double>.testConstantValue()
             layer.circleBlurTransition = StyleTransition(duration: 10.0, delay: 10.0)
             layer.circleColor = Value<StyleColor>.testConstantValue()
             layer.circleColorTransition = StyleTransition(duration: 10.0, delay: 10.0)
+            layer.circleEmissiveStrength = Value<Double>.testConstantValue()
+            layer.circleEmissiveStrengthTransition = StyleTransition(duration: 10.0, delay: 10.0)
             layer.circleOpacity = Value<Double>.testConstantValue()
             layer.circleOpacityTransition = StyleTransition(duration: 10.0, delay: 10.0)
             layer.circlePitchAlignment = Value<CirclePitchAlignment>.testConstantValue()
@@ -50,7 +47,7 @@ final class CircleLayerIntegrationTests: MapViewIntegrationTestCase {
 
             // Add the layer
             do {
-                try style.addLayer(layer)
+                try mapView.mapboxMap.addLayer(layer)
                 successfullyAddedLayerExpectation.fulfill()
             } catch {
                 XCTFail("Failed to add CircleLayer because of error: \(error)")
@@ -58,7 +55,7 @@ final class CircleLayerIntegrationTests: MapViewIntegrationTestCase {
 
             // Retrieve the layer
             do {
-                _ = try style.layer(withId: "test-id", type: CircleLayer.self)
+                _ = try mapView.mapboxMap.layer(withId: "test-id", type: CircleLayer.self)
                 successfullyRetrievedLayerExpectation.fulfill()
             } catch {
                 XCTFail("Failed to retrieve CircleLayer because of error: \(error)")

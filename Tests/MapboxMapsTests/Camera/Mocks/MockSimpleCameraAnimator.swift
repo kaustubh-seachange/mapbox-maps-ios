@@ -1,13 +1,16 @@
 @testable import MapboxMaps
+import UIKit
 
 final class MockSimpleCameraAnimator: SimpleCameraAnimatorProtocol {
     @Stubbed var state: UIViewAnimatingState = .inactive
 
     @Stubbed var owner: AnimationOwner = .random()
 
-    @Stubbed var delegate: CameraAnimatorDelegate?
+    @Stubbed var animationType: AnimationType = .unspecified
 
     @Stubbed var to: CameraOptions = .random()
+
+    @TestSignal var onCameraAnimatorStatusChanged: Signal<CameraAnimatorStatus>
 
     let cancelStub = Stub<Void, Void>()
     func cancel() {

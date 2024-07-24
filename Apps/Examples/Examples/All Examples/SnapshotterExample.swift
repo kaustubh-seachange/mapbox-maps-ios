@@ -1,13 +1,11 @@
 import UIKit
-import MapboxMaps
+@_spi(Experimental) import MapboxMaps
 
-@objc(SnapshotterExample)
-
-public class SnapshotterExample: UIViewController, ExampleProtocol {
-
-    internal var mapView: MapView!
-    public var snapshotter: Snapshotter!
-    public var snapshotView: UIImageView!
+final class SnapshotterExample: UIViewController, ExampleProtocol {
+    private var cancelables = Set<AnyCancelable>()
+    private var mapView: MapView!
+    private var snapshotter: Snapshotter!
+    private var snapshotView: UIImageView!
     private var snapshotting = false
     private lazy var stackView: UIStackView = {
         let stackView = UIStackView(frame: view.safeAreaLayoutGuide.layoutFrame)
@@ -21,12 +19,9 @@ public class SnapshotterExample: UIViewController, ExampleProtocol {
     override public func viewDidLoad() {
         super.viewDidLoad()
 
-        let mapInitOptions = MapInitOptions(
-            cameraOptions: CameraOptions(center: CLLocationCoordinate2D(latitude: 50, longitude: 138.482), zoom: 3.5),
-            styleURI: .dark
-        )
-        mapView = MapView(frame: view.bounds, mapInitOptions: mapInitOptions)
+        mapView = MapView(frame: view.bounds)
         mapView.translatesAutoresizingMaskIntoConstraints = false
+        mapView.mapboxMap.mapStyle = .standard(lightPreset: .dawn, showRoadLabels: false)
         // Add the `MapViewController`'s view to the stack view as a
         // child view controller.
         stackView.addArrangedSubview(mapView)
@@ -61,37 +56,38 @@ public class SnapshotterExample: UIViewController, ExampleProtocol {
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
-        if snapshotter == nil {
-            initializeSnapshotter()
-        }
-    }
-
-    private func initializeSnapshotter() {
-        // Configure the snapshotter object with its default access
-        // token, size, map style, and camera.
         let size = CGSize(
             width: view.safeAreaLayoutGuide.layoutFrame.width,
             height: (view.safeAreaLayoutGuide.layoutFrame.height - stackView.spacing) / 2)
+
+        if let snapshotter {
+            snapshotter.snapshotSize = size
+        } else {
+            initializeSnapshotter(with: size)
+        }
+    }
+
+    private func initializeSnapshotter(with size: CGSize) {
+        // Configure the snapshotter object with its size, map style, and camera.
         let options = MapSnapshotOptions(
             size: size,
-            pixelRatio: UIScreen.main.scale,
-            resourceOptions: ResourceOptionsManager.default.resourceOptions)
+            pixelRatio: UIScreen.main.scale)
 
         snapshotter = Snapshotter(options: options)
-        snapshotter.style.uri = .light
+        snapshotter.load(mapStyle: .standard(lightPreset: .dusk))
 
         // Set the camera of the snapshotter
 
-        mapView.mapboxMap.onEvery(event: .mapIdle) { [weak self] _ in
+        mapView.mapboxMap.onMapIdle.observe { [weak self] _ in
             // Allow the previous snapshot to complete before starting a new one.
             guard let self = self, !self.snapshotting else {
                 return
             }
 
-            let snapshotterCameraOptions = CameraOptions(cameraState: self.mapView.cameraState)
+            let snapshotterCameraOptions = CameraOptions(cameraState: self.mapView.mapboxMap.cameraState)
             self.snapshotter.setCamera(to: snapshotterCameraOptions)
             self.startSnapshot()
-        }
+        }.store(in: &cancelables)
     }
 
     public func startSnapshot() {

@@ -1,36 +1,42 @@
+import UIKit
+
 /// A ``ViewportState`` implementation that tracks the location puck (to show a puck, use
 /// ``LocationOptions/puckType``)
 ///
-/// Use ``Viewport/makeFollowPuckViewportState(options:)`` to create instances of this
+/// Use ``ViewportManager/makeFollowPuckViewportState(options:)`` to create instances of this
 /// class.
 public final class FollowPuckViewportState {
 
     /// Configuration options for this state.
     public var options: FollowPuckViewportStateOptions {
-        get {
-            dataSource.options
-        }
-        set {
-            dataSource.options = newValue
-        }
+        get { optionsSubject.value }
+        set { optionsSubject.value = newValue }
     }
 
-    // MARK: - Injected Dependencies
-
-    private let dataSource: FollowPuckViewportStateDataSourceProtocol
-
+    private let impl: CameraViewportState
+    private let optionsSubject: CurrentValueSignalSubject<FollowPuckViewportStateOptions>
     private let mapboxMap: MapboxMapProtocol
 
-    // MARK: - Private State
-
-    private var updatingCameraCancelable: Cancelable?
-
-    // MARK: - Initialization
-
-    internal init(dataSource: FollowPuckViewportStateDataSourceProtocol,
-                  mapboxMap: MapboxMapProtocol) {
-        self.dataSource = dataSource
+    internal init(options: FollowPuckViewportStateOptions,
+                  mapboxMap: MapboxMapProtocol,
+                  onPuckRender: Signal<PuckRenderingData>,
+                  safeAreaPadding: Signal<UIEdgeInsets?>) {
+        let optionsSubject = CurrentValueSignalSubject(options)
+        self.optionsSubject = optionsSubject
         self.mapboxMap = mapboxMap
+
+        let resultCamera = Signal
+            .combineLatest(optionsSubject.signal.skipRepeats(), onPuckRender.map(\.followPuckState).skipRepeats())
+            .map { (options, renderingState) in
+                CameraOptions(
+                    center: renderingState.coordinate,
+                    padding: options.padding,
+                    zoom: options.zoom,
+                    bearing: options.bearing?.evaluate(with: renderingState),
+                    pitch: options.pitch)
+            }
+
+        self.impl = CameraViewportState(cameraOptions: resultCamera, mapboxMap: mapboxMap, safeAreaPadding: safeAreaPadding)
     }
 }
 
@@ -38,26 +44,40 @@ extension FollowPuckViewportState: ViewportState {
     /// :nodoc:
     /// See ``ViewportState/observeDataSource(with:)``.
     public func observeDataSource(with handler: @escaping (CameraOptions) -> Bool) -> Cancelable {
-        return dataSource.observe(with: handler)
+        impl.observeDataSource(with: handler)
     }
 
     /// :nodoc:
     /// See ``ViewportState/startUpdatingCamera()``.
     public func startUpdatingCamera() {
-        guard updatingCameraCancelable == nil else {
-            return
-        }
-
-        updatingCameraCancelable = dataSource.observe { [mapboxMap] cameraOptions in
-            mapboxMap.setCamera(to: cameraOptions)
-            return true
-        }
+        mapboxMap.beginAnimation()
+        impl.startUpdatingCamera()
     }
 
     /// :nodoc:
     /// See ``ViewportState/stopUpdatingCamera()``.
     public func stopUpdatingCamera() {
-        updatingCameraCancelable?.cancel()
-        updatingCameraCancelable = nil
+        impl.stopUpdatingCamera()
+        mapboxMap.endAnimation()
+    }
+}
+
+extension FollowPuckViewportState {
+    /// Substate of ``PuckRenderingData`` which contains only data needed for ``FollowPuckViewportState`` rendering.
+    /// Allows to use ``Signal.skipRepeats()`` and avoid unnecessary recalculations.
+    struct RenderingState: Equatable {
+        var coordinate: CLLocationCoordinate2D
+        var heading: CLLocationDirection?
+        var bearing: CLLocationDirection?
+    }
+}
+
+extension PuckRenderingData {
+    var followPuckState: FollowPuckViewportState.RenderingState {
+        FollowPuckViewportState.RenderingState(
+            coordinate: location.coordinate,
+            heading: heading?.direction,
+            bearing: location.bearing
+        )
     }
 }

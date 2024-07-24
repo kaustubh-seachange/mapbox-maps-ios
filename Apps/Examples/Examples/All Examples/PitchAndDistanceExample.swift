@@ -2,12 +2,12 @@
 // field of a symbol layer to remove large size POI labels in the far
 // distance at high pitch, freeing up that screen real-estate for smaller road and street labels.
 
-import Foundation
+import UIKit
 import MapboxMaps
 
-@objc(PitchAndDistanceExample)
 final class PitchAndDistanceExample: UIViewController, ExampleProtocol {
     private var mapView: MapView!
+    private var cancelables = Set<AnyCancelable>()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -26,17 +26,17 @@ final class PitchAndDistanceExample: UIViewController, ExampleProtocol {
 
         view.addSubview(mapView)
         // Wait for the map to load its style before setting the filter.
-        mapView.mapboxMap.onNext(event: .mapLoaded) { _ in
-            self.setPitchDistanceFilter()
+        mapView.mapboxMap.onMapLoaded.observeNext { [weak self] _ in
+            self?.setPitchDistanceFilter()
 
             // The below line is used for internal testing purposes only.
-            self.finish()
-        }
+            self?.finish()
+        }.store(in: &cancelables)
     }
 
     // Add an additional condition to the current filter
     // to filter based on ["pitch"] and ["distance-from-center"]
-    func updateFilter(currentFilter: Expression) -> Expression {
+    func updateFilter(currentFilter: Exp) -> Exp {
         let updatedFilter = Exp(.all) {
             currentFilter
             Exp(.switchCase) {
@@ -65,7 +65,7 @@ final class PitchAndDistanceExample: UIViewController, ExampleProtocol {
 
         for layerID in poiLayers {
             do {
-                try mapView.mapboxMap.style.updateLayer(withId: layerID, type: SymbolLayer.self, update: { (layer: inout SymbolLayer) in
+                try mapView.mapboxMap.updateLayer(withId: layerID, type: SymbolLayer.self, update: { (layer: inout SymbolLayer) in
                     layer.filter = layer.filter.map(updateFilter(currentFilter: ))
                 })
             } catch {

@@ -1,11 +1,11 @@
 import UIKit
 import MapboxMaps
 
-@objc(Custom2DPuckExample)
-public class Custom2DPuckExample: UIViewController, ExampleProtocol {
-
+final class Custom2DPuckExample: UIViewController, ExampleProtocol {
+    private var cancelables = Set<AnyCancelable>()
     private var mapView: MapView!
-    internal var puckConfiguration = Puck2DConfiguration.makeDefault(showBearing: true)
+    private var puckConfiguration = Puck2DConfiguration.makeDefault(showBearing: true)
+
     private var showsPuck: PuckVisibility = .isVisible {
         didSet {
             updatePuckUI()
@@ -30,15 +30,15 @@ public class Custom2DPuckExample: UIViewController, ExampleProtocol {
         }
     }
 
-    private var bearingSource: PuckBearingSource = .course {
+    private var puckBearing: PuckBearing = .heading {
         didSet {
-            mapView.location.options.puckBearingSource = bearingSource
+            mapView.location.options.puckBearing = puckBearing
         }
     }
 
     private var style: Style = .dark {
         didSet {
-            mapView.mapboxMap.style.uri = style.styleURL
+            mapView.mapboxMap.styleURI = style.styleURL
         }
     }
 
@@ -81,21 +81,32 @@ public class Custom2DPuckExample: UIViewController, ExampleProtocol {
         }
     }
 
-    private enum PuckImage {
-        case star
+    private enum PuckImage: CaseIterable {
+        case dash
+        case jpegSquare
         case blueDot
 
         var image: UIImage? {
             switch self {
-            case .star:
-                return UIImage(named: "star")
+            case .dash:
+                return UIImage(named: "dash-puck")
+            case .jpegSquare:
+                return UIImage(named: "jpeg-image")
             case .blueDot:
                 return .none
             }
         }
 
+        var usesDefaultShadowImage: Bool {
+            self == .blueDot
+        }
+
         mutating func toggle() {
-            self = self == .blueDot ? .star : .blueDot
+            var idx = Self.allCases.firstIndex(of: self)! + 1
+            if idx == Self.allCases.count {
+                idx = 0
+            }
+            self = Self.allCases[idx]
         }
     }
 
@@ -153,10 +164,11 @@ public class Custom2DPuckExample: UIViewController, ExampleProtocol {
         }
     }
 
-    override public func viewDidLoad() {
+    override func viewDidLoad() {
         super.viewDidLoad()
 
-        let mapInitOptions = MapInitOptions(styleURI: .dark)
+        let cameraOptions = CameraOptions(center: CLLocationCoordinate2D(latitude: 37.26301831966747, longitude: -121.97647612483807), zoom: 6)
+        let mapInitOptions = MapInitOptions(cameraOptions: cameraOptions, styleURI: .dark)
         mapView = MapView(frame: view.bounds, mapInitOptions: mapInitOptions)
         mapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(mapView)
@@ -164,21 +176,23 @@ public class Custom2DPuckExample: UIViewController, ExampleProtocol {
         addCustomizePuckButton()
 
         // Granularly configure the location puck with a `Puck2DConfiguration`
+        puckConfiguration.layerPosition = .default
         mapView.location.options.puckType = .puck2D(puckConfiguration)
-        mapView.location.options.puckBearingSource = .course
+        mapView.location.options.puckBearing = .heading
+        mapView.location.options.puckBearingEnabled = true
 
         // Center map over the user's current location
-        mapView.mapboxMap.onNext(event: .mapLoaded, handler: { [weak self] _ in
+        mapView.mapboxMap.onMapLoaded.observeNext { [weak self] _ in
             guard let self = self else { return }
 
             if let currentLocation = self.mapView.location.latestLocation {
-                let cameraOptions = CameraOptions(center: currentLocation.coordinate, zoom: 20.0)
+                let cameraOptions = CameraOptions(center: currentLocation.coordinate, zoom: 16.0)
                 self.mapView.camera.ease(to: cameraOptions, duration: 2.0)
             }
-        })
+        }.store(in: &cancelables)
     }
 
-    override public func viewDidAppear(_ animated: Bool) {
+    override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         // The below line is used for internal testing purposes only.
         finish()
@@ -204,10 +218,11 @@ public class Custom2DPuckExample: UIViewController, ExampleProtocol {
         ])
     }
 
-    @objc public func changePuckOptions(sender: UIButton) {
+    @objc func changePuckOptions(sender: UIButton) {
         let alert = UIAlertController(title: "Toggle Puck Options",
                                       message: "Select an options to toggle.",
                                       preferredStyle: .actionSheet)
+        alert.popoverPresentationController?.sourceView = sender
 
         alert.addAction(UIAlertAction(title: "Toggle Puck visibility", style: .default) { _ in
             self.showsPuck.toggle()
@@ -230,7 +245,7 @@ public class Custom2DPuckExample: UIViewController, ExampleProtocol {
         })
 
         alert.addAction(UIAlertAction(title: "Toggle bearing source", style: .default) { _ in
-            self.bearingSource.toggle()
+            self.puckBearing.toggle()
         })
 
         alert.addAction(UIAlertAction(title: "Toggle Map Style", style: .default) { _ in
@@ -250,6 +265,10 @@ public class Custom2DPuckExample: UIViewController, ExampleProtocol {
         puckConfiguration = Puck2DConfiguration.makeDefault(showBearing: showsBearing.isVisible)
         puckConfiguration.showsAccuracyRing = showsAccuracyRing.isVisible
         puckConfiguration.topImage = puckImage.image
+        puckConfiguration.layerPosition = .default
+        if !puckImage.usesDefaultShadowImage {
+            puckConfiguration.shadowImage = nil
+        }
         puckConfiguration.opacity = puckOpacity.rawValue
         switch showsPuck {
         case .isVisible:
@@ -261,14 +280,14 @@ public class Custom2DPuckExample: UIViewController, ExampleProtocol {
 
     func updateProjection() {
         do {
-            try mapView.mapboxMap.style.setProjection(StyleProjection(name: projection))
+            try mapView.mapboxMap.setProjection(StyleProjection(name: projection))
         } catch {
             print(error)
         }
     }
 }
 
-extension PuckBearingSource {
+extension PuckBearing {
     mutating func toggle() {
         self = self == .heading ? .course : .heading
     }

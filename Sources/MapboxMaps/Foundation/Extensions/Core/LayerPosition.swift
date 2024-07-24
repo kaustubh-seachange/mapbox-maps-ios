@@ -1,8 +1,7 @@
 import MapboxCoreMaps
 
-/// Specifies the position at which a layer will be added when using
-/// `Style.addLayer`.
-public enum LayerPosition: Equatable {
+/// Specifies the position at which a layer will be added when using `Style.addLayer`.
+public enum LayerPosition: Equatable, Codable {
     /// Default behavior; add to the top of the layers stack.
     case `default`
 
@@ -15,23 +14,23 @@ public enum LayerPosition: Equatable {
     /// Layer should be positioned at the specified index in the layers stack.
     case at(Int)
 
-    internal var corePosition: MapboxCoreMaps.LayerPosition {
+    internal var corePosition: CoreLayerPosition {
         switch self {
         case .default:
-            return MapboxCoreMaps.LayerPosition()
+            return CoreLayerPosition()
         case .above(let layerId):
-            return MapboxCoreMaps.LayerPosition(above: layerId)
+            return CoreLayerPosition(above: layerId)
         case .below(let layerId):
-            return MapboxCoreMaps.LayerPosition(below: layerId)
+            return CoreLayerPosition(below: layerId)
         case .at(let index):
-            return MapboxCoreMaps.LayerPosition(at: index)
+            return CoreLayerPosition(at: index)
         }
     }
 }
 
-// MARK: - MapboxCoreMaps.LayerPosition conveniences
+// MARK: - CoreLayerPosition conveniences
 
-extension MapboxCoreMaps.LayerPosition {
+extension CoreLayerPosition {
 
     internal convenience init(above: String? = nil, below: String? = nil, at: Int? = nil) {
         self.init(__above: above, below: below, at: at?.NSNumber)

@@ -1,10 +1,12 @@
 import XCTest
+import UIKit
 @testable import MapboxMaps
 
 final class CameraAnimationsManagerTests: XCTestCase {
 
     var impl: MockCameraAnimationsManager!
     var cameraAnimationsManager: CameraAnimationsManager!
+    var cancelables: Set<AnyCancelable> = []
 
     override func setUp() {
         super.setUp()
@@ -15,11 +17,14 @@ final class CameraAnimationsManagerTests: XCTestCase {
     override func tearDown() {
         cameraAnimationsManager = nil
         impl = nil
+        cancelables = []
         super.tearDown()
     }
 
     func testCameraAnimators() {
-        impl.cameraAnimators = .random(withLength: .random(in: 0...10), generator: MockCameraAnimator.init)
+        impl.cameraAnimators = [
+            MockCameraAnimator(), MockCameraAnimator(), MockCameraAnimator()
+        ]
 
         XCTAssertEqual(cameraAnimationsManager.cameraAnimators.count, impl.cameraAnimators.count)
         XCTAssertTrue(zip(cameraAnimationsManager.cameraAnimators, impl.cameraAnimators).allSatisfy(===))
@@ -32,8 +37,8 @@ final class CameraAnimationsManagerTests: XCTestCase {
     }
 
     func testFlyTo() throws {
-        let cameraOptions = CameraOptions.random()
-        let duration = TimeInterval?.random(.random(in: 0...10))
+        let cameraOptions = CameraOptions.testConstantValue()
+        let duration = 5.9
         let completion = Stub<UIViewAnimatingPosition, Void>()
 
         let cancelable = cameraAnimationsManager.fly(
@@ -47,14 +52,14 @@ final class CameraAnimationsManagerTests: XCTestCase {
         XCTAssertEqual(invocation.parameters.duration, duration)
         XCTAssertIdentical(cancelable, invocation.returnValue)
 
-        let position = UIViewAnimatingPosition.random()
+        let position = UIViewAnimatingPosition.start
         invocation.parameters.completion?(position)
         XCTAssertEqual(completion.invocations.map(\.parameters), [position])
     }
 
     func testFlyToWithDefaultArguments() {
         cameraAnimationsManager.fly(
-            to: .random())
+            to: .testConstantValue())
 
         XCTAssertEqual(impl.flyToStub.invocations.count, 1)
         XCTAssertNil(impl.flyToStub.invocations.first?.parameters.duration)
@@ -62,9 +67,9 @@ final class CameraAnimationsManagerTests: XCTestCase {
     }
 
     func testEaseTo() throws {
-        let cameraOptions = CameraOptions.random()
-        let duration = TimeInterval.random(in: 0...10)
-        let curve = UIView.AnimationCurve.random()
+        let cameraOptions = CameraOptions.testConstantValue()
+        let duration = 1.9
+        let curve = UIView.AnimationCurve.easeIn
         let completion = Stub<UIViewAnimatingPosition, Void>()
 
         let cancelable = cameraAnimationsManager.ease(
@@ -80,15 +85,15 @@ final class CameraAnimationsManagerTests: XCTestCase {
         XCTAssertEqual(invocation.parameters.curve, curve)
         XCTAssertIdentical(cancelable, invocation.returnValue)
 
-        let position = UIViewAnimatingPosition.random()
+        let position = UIViewAnimatingPosition.end
         invocation.parameters.completion?(position)
         XCTAssertEqual(completion.invocations.map(\.parameters), [position])
     }
 
     func testEaseToWithDefaultArguments() {
         cameraAnimationsManager.ease(
-            to: .random(),
-            duration: .random(in: 0...10))
+            to: .testConstantValue(),
+            duration: 8.3)
 
         XCTAssertEqual(impl.easeToStub.invocations.count, 1)
         XCTAssertEqual(impl.easeToStub.invocations.first?.parameters.curve, .easeOut)
@@ -96,9 +101,9 @@ final class CameraAnimationsManagerTests: XCTestCase {
     }
 
     func testMakeAnimatorWithTimingParameters() throws {
-        let duration = TimeInterval.random(in: 0...10)
+        let duration = 9.3
         let timingParameters = MockTimingCurveProvider()
-        let animationOwner = AnimationOwner.random()
+        let animationOwner = AnimationOwner.init(rawValue: UUID().uuidString)
         let animations = Stub<CameraTransition, Void>()
 
         let animator = cameraAnimationsManager.makeAnimator(
@@ -114,14 +119,14 @@ final class CameraAnimationsManagerTests: XCTestCase {
         XCTAssertEqual(invocation.parameters.animationOwner, animationOwner)
         XCTAssertIdentical(animator, invocation.returnValue)
 
-        var cameraTransition = CameraTransition(cameraState: .random(), initialAnchor: .random())
+        var cameraTransition = CameraTransition(cameraState: .testConstantValue(), initialAnchor: .init(x: 83, y: 74))
         invocation.parameters.animations(&cameraTransition)
         XCTAssertEqual(animations.invocations.map(\.parameters), [cameraTransition])
     }
 
     func testMakeAnimatorWithTimingParametersWithDefaultArguments() {
         _ = cameraAnimationsManager.makeAnimator(
-            duration: .random(in: 0...10),
+            duration: 2.9,
             timingParameters: MockTimingCurveProvider(),
             animations: { _ in })
 
@@ -130,9 +135,9 @@ final class CameraAnimationsManagerTests: XCTestCase {
     }
 
     func testMakeAnimatorWithCurve() throws {
-        let duration = TimeInterval.random(in: 0...10)
-        let curve = UIView.AnimationCurve.random()
-        let animationOwner = AnimationOwner.random()
+        let duration = 8.2
+        let curve = UIView.AnimationCurve.easeInOut
+        let animationOwner = AnimationOwner.init(rawValue: UUID().uuidString)
         let animations = Stub<CameraTransition, Void>()
 
         let animator = cameraAnimationsManager.makeAnimator(
@@ -148,15 +153,15 @@ final class CameraAnimationsManagerTests: XCTestCase {
         XCTAssertEqual(invocation.parameters.animationOwner, animationOwner)
         XCTAssertIdentical(animator, invocation.returnValue)
 
-        var cameraTransition = CameraTransition(cameraState: .random(), initialAnchor: .random())
+        var cameraTransition = CameraTransition(cameraState: .testConstantValue(), initialAnchor: .init(x: -38, y: 74))
         invocation.parameters.animations(&cameraTransition)
         XCTAssertEqual(animations.invocations.map(\.parameters), [cameraTransition])
     }
 
     func testMakeAnimatorWithCurveWithDefaultArguments() {
         _ = cameraAnimationsManager.makeAnimator(
-            duration: .random(in: 0...10),
-            curve: .random(),
+            duration: 3.1,
+            curve: .easeOut,
             animations: { _ in })
 
         XCTAssertEqual(impl.makeAnimatorWithCurveStub.invocations.count, 1)
@@ -164,10 +169,10 @@ final class CameraAnimationsManagerTests: XCTestCase {
     }
 
     func testMakeAnimatorWithControlPoints() throws {
-        let duration = TimeInterval.random(in: 0...10)
-        let controlPoint1 = CGPoint.random()
-        let controlPoint2 = CGPoint.random()
-        let animationOwner = AnimationOwner.random()
+        let duration = 8.2
+        let controlPoint1 = CGPoint.init(x: 0, y: 1)
+        let controlPoint2 = CGPoint.init(x: 1, y: 0.75)
+        let animationOwner = AnimationOwner.init(rawValue: UUID().uuidString)
         let animations = Stub<CameraTransition, Void>()
 
         let animator = cameraAnimationsManager.makeAnimator(
@@ -185,16 +190,16 @@ final class CameraAnimationsManagerTests: XCTestCase {
         XCTAssertEqual(invocation.parameters.animationOwner, animationOwner)
         XCTAssertIdentical(animator, invocation.returnValue)
 
-        var cameraTransition = CameraTransition(cameraState: .random(), initialAnchor: .random())
+        var cameraTransition = CameraTransition(cameraState: .testConstantValue(), initialAnchor: .init(x: 33, y: -38))
         invocation.parameters.animations(&cameraTransition)
         XCTAssertEqual(animations.invocations.map(\.parameters), [cameraTransition])
     }
 
     func testMakeAnimatorWithControlPointsWithDefaultArguments() {
         _ = cameraAnimationsManager.makeAnimator(
-            duration: .random(in: 0...10),
-            controlPoint1: .random(),
-            controlPoint2: .random(),
+            duration: 2.7,
+            controlPoint1: .init(x: 0.1, y: 0.1),
+            controlPoint2: .init(x: 0.9, y: 0.8),
             animations: { _ in })
 
         XCTAssertEqual(impl.makeAnimatorWithControlPointsStub.invocations.count, 1)
@@ -202,9 +207,9 @@ final class CameraAnimationsManagerTests: XCTestCase {
     }
 
     func testMakeAnimatorWithDampingRatio() throws {
-        let duration = TimeInterval.random(in: 0...10)
-        let dampingRatio = CGFloat.random(in: 0...10)
-        let animationOwner = AnimationOwner.random()
+        let duration = 8.32
+        let dampingRatio = 9.3
+        let animationOwner = AnimationOwner.init(rawValue: UUID().uuidString)
         let animations = Stub<CameraTransition, Void>()
 
         let animator = cameraAnimationsManager.makeAnimator(
@@ -220,18 +225,65 @@ final class CameraAnimationsManagerTests: XCTestCase {
         XCTAssertEqual(invocation.parameters.animationOwner, animationOwner)
         XCTAssertIdentical(animator, invocation.returnValue)
 
-        var cameraTransition = CameraTransition(cameraState: .random(), initialAnchor: .random())
+        var cameraTransition = CameraTransition(cameraState: .testConstantValue(), initialAnchor: .init(x: 0, y: 84))
         invocation.parameters.animations(&cameraTransition)
         XCTAssertEqual(animations.invocations.map(\.parameters), [cameraTransition])
     }
 
     func testMakeAnimatorWithDampingRatioWithDefaultArguments() {
         _ = cameraAnimationsManager.makeAnimator(
-            duration: .random(in: 0...10),
-            dampingRatio: .random(in: 0...10),
+            duration: 1.9,
+            dampingRatio: 0.2,
             animations: { _ in })
 
         XCTAssertEqual(impl.makeAnimatorWithDampingRatioStub.invocations.count, 1)
         XCTAssertEqual(impl.makeAnimatorWithDampingRatioStub.invocations.first?.parameters.animationOwner, .unspecified)
+    }
+
+    func testObservingCameraAnimatorStarted() {
+        let mockAnimator = MockCameraAnimator()
+        var isStarted = false
+        cameraAnimationsManager.onCameraAnimatorStarted.observe { animator in
+            XCTAssertIdentical(animator, mockAnimator)
+            isStarted = true
+        }.store(in: &cancelables)
+
+        impl.$onCameraAnimatorStatusChanged.send((mockAnimator, .started))
+
+        XCTAssertTrue(isStarted)
+    }
+
+    func testObservingCameraAnimatorFinished() {
+        let mockAnimator = MockCameraAnimator()
+
+        var isFinished = false
+        cameraAnimationsManager.onCameraAnimatorFinished.observe { animator in
+            XCTAssertIdentical(animator, mockAnimator)
+            isFinished = true
+        }.store(in: &cancelables)
+        cameraAnimationsManager.onCameraAnimatorCancelled.observe { _ in
+            XCTFail("Animator is not cancelled")
+        }.store(in: &cancelables)
+
+        impl.$onCameraAnimatorStatusChanged.send((mockAnimator, .stopped(reason: .finished)))
+
+        XCTAssertTrue(isFinished)
+    }
+
+    func testObservingCameraAnimatorCancelled() {
+        let mockAnimator = MockCameraAnimator()
+
+        var isCancelled = false
+        cameraAnimationsManager.onCameraAnimatorCancelled.observe { animator in
+            XCTAssertIdentical(animator, mockAnimator)
+            isCancelled = true
+        }.store(in: &cancelables)
+        cameraAnimationsManager.onCameraAnimatorFinished.observe { _ in
+            XCTFail("Animator is not finished")
+        }.store(in: &cancelables)
+
+        impl.$onCameraAnimatorStatusChanged.send((mockAnimator, .stopped(reason: .cancelled)))
+
+        XCTAssertTrue(isCancelled)
     }
 }

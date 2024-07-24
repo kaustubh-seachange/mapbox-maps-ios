@@ -4,6 +4,7 @@ import MapboxMaps
 
 /// This example shows a basic usage of sonar-like pulsing circle animation around the 2D puck.
 final class BasicLocationPulsingExample: UIViewController, ExampleProtocol {
+    private var cancelables = Set<AnyCancelable>()
 
     private lazy var mapView: MapView = {
         let view = MapView(frame: view.bounds, mapInitOptions: .init(styleURI: .streets))
@@ -26,7 +27,10 @@ final class BasicLocationPulsingExample: UIViewController, ExampleProtocol {
         puckConfiguration.pulsing = .default
         mapView.location.options.puckType = .puck2D(puckConfiguration)
 
-        mapView.location.addLocationConsumer(newConsumer: self)
+        mapView.location.onLocationChange.observeNext { [weak mapView] newLocation in
+            guard let mapView, let location = newLocation.last else { return }
+            mapView.mapboxMap.setCamera(to: .init(center: location.coordinate, zoom: 18))
+        }.store(in: &cancelables)
 
         if #available(iOS 14.0, *) {
             navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .action)
@@ -90,6 +94,11 @@ final class BasicLocationPulsingExample: UIViewController, ExampleProtocol {
 
         let controller = UIAlertController(title: "Puck circle", message: nil, preferredStyle: .actionSheet)
         controller.modalPresentationStyle = .popover
+        if #available(iOS 16.0, *) {
+            controller.popoverPresentationController?.sourceItem = navigationItem.rightBarButtonItem
+        } else {
+            controller.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
+        }
         [constantPulseAction, accuracyPulseAction, staticAccuracyRingAction, stopPulseAction, cancelAction]
             .forEach(controller.addAction)
 
@@ -106,24 +115,24 @@ final class BasicLocationPulsingExample: UIViewController, ExampleProtocol {
         }
 
         let constantPulseAction = UIAction(title: "Pulse with constant radius",
-                                           state: state == .pulseConstant ? .on : .off) { _ in
-            self.enablePulsingWithConstantRadius()
-            self.updateMenu()
+                                           state: state == .pulseConstant ? .on : .off) { [weak self] _ in
+            self?.enablePulsingWithConstantRadius()
+            self?.updateMenu()
 
         }
         let accuracyPulseAction = UIAction(title: "Pulse with accuracy radius",
-                                           state: state == .pulseAccuracy ? .on : .off) { _ in
-            self.enablePulsingWithAccuracyRadius()
-            self.updateMenu()
+                                           state: state == .pulseAccuracy ? .on : .off) { [weak self] _ in
+            self?.enablePulsingWithAccuracyRadius()
+            self?.updateMenu()
         }
-        let disablePulseAction = UIAction(title: "None", state: state == .disabled ? .on : .off) { _ in
-            self.disablePulsing()
-            self.updateMenu()
+        let disablePulseAction = UIAction(title: "None", state: state == .disabled ? .on : .off) { [weak self] _ in
+            self?.disablePulsing()
+            self?.updateMenu()
         }
         let staticAccuracyRingAction = UIAction(title: "Static with accuracy radius",
-                                                state: state == .static ? .on : .off) { _ in
-            self.enableStaticAccuracyCircle()
-            self.updateMenu()
+                                                state: state == .static ? .on : .off) { [weak self] _ in
+            self?.enableStaticAccuracyCircle()
+            self?.updateMenu()
         }
 
         let menu = UIMenu(
@@ -132,12 +141,6 @@ final class BasicLocationPulsingExample: UIViewController, ExampleProtocol {
         )
 
         navigationItem.rightBarButtonItem?.menu = menu
-    }
-}
-
-extension BasicLocationPulsingExample: LocationConsumer {
-    func locationUpdate(newLocation: Location) {
-        mapView.mapboxMap.setCamera(to: .init(center: newLocation.coordinate, zoom: 18))
     }
 }
 

@@ -13,15 +13,16 @@ final class SimpleCameraAnimatorTests: XCTestCase {
     var cameraOptionsInterpolator: MockCameraOptionsInterpolator!
     var dateProvider: MockDateProvider!
     var animator: SimpleCameraAnimator!
-    var delegate: MockCameraAnimatorDelegate!
+    var recordedCameraAnimatorStatus: [CameraAnimatorStatus] = []
+    var cancelables: Set<AnyCancelable> = []
 
     override func setUp() {
         super.setUp()
-        from = .random()
-        to = .random()
-        duration = .random(in: 1...10)
-        curve = .random()
-        owner = .random()
+        from = .init()
+        to = .testConstantValue()
+        duration = 8.4
+        curve = .easeInOut
+        owner = .init(rawValue: UUID().uuidString)
         mapboxMap = MockMapboxMap()
         mainQueue = MockMainQueue()
         cameraOptionsInterpolator = MockCameraOptionsInterpolator()
@@ -36,12 +37,12 @@ final class SimpleCameraAnimatorTests: XCTestCase {
             mainQueue: mainQueue,
             cameraOptionsInterpolator: cameraOptionsInterpolator,
             dateProvider: dateProvider)
-        delegate = MockCameraAnimatorDelegate()
-        animator.delegate = delegate
+        animator.onCameraAnimatorStatusChanged.observe { [unowned self] status in
+            self.recordedCameraAnimatorStatus.append(status)
+        }.store(in: &cancelables)
     }
 
     override func tearDown() {
-        delegate = nil
         animator = nil
         dateProvider = nil
         cameraOptionsInterpolator = nil
@@ -52,6 +53,7 @@ final class SimpleCameraAnimatorTests: XCTestCase {
         duration = nil
         to = nil
         from = nil
+        recordedCameraAnimatorStatus = []
         super.tearDown()
     }
 
@@ -66,7 +68,6 @@ final class SimpleCameraAnimatorTests: XCTestCase {
             mainQueue: mainQueue,
             cameraOptionsInterpolator: cameraOptionsInterpolator,
             dateProvider: dateProvider)
-        animator.delegate = delegate
     }
 
     func testOwner() {
@@ -85,13 +86,7 @@ final class SimpleCameraAnimatorTests: XCTestCase {
         animator.startAnimation()
 
         XCTAssertEqual(animator.state, .active)
-    }
-
-    func testStartAnimationCallsDelegate() {
-        animator.startAnimation()
-
-        XCTAssertEqual(delegate.cameraAnimatorDidStartRunningStub.invocations.count, 1)
-        XCTAssertIdentical(delegate.cameraAnimatorDidStartRunningStub.invocations.first?.parameters, animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started])
     }
 
     func testStartAnimationAgainWhileItIsRunningDoesNotChangeTheUpdateFraction() {
@@ -113,23 +108,20 @@ final class SimpleCameraAnimatorTests: XCTestCase {
     func testStartAnimationWhileItIsCompleteDoesNotChangeTheState() {
         animator.startAnimation()
         animator.cancel()
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .stopped(reason: .cancelled)])
+        recordedCameraAnimatorStatus = []
 
         animator.startAnimation()
 
         XCTAssertEqual(animator.state, .inactive)
+        XCTAssertTrue(recordedCameraAnimatorStatus.isEmpty)
     }
 
     func testStartAnimationAfterDelaySetsStateToActive() {
-        animator.startAnimation(afterDelay: .random(in: 0...10))
+        animator.startAnimation(afterDelay: 3.3)
 
         XCTAssertEqual(animator.state, .active)
-    }
-
-    func testStartAnimationAfterDelayCallsDelegate() {
-        animator.startAnimation(afterDelay: .random(in: 0...10))
-
-        XCTAssertEqual(delegate.cameraAnimatorDidStartRunningStub.invocations.count, 1)
-        XCTAssertIdentical(delegate.cameraAnimatorDidStartRunningStub.invocations.first?.parameters, animator)
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started])
     }
 
     func testStartAnimationAfterDelayAgainWhileItIsRunningDoesNotChangeTheUpdateFraction() {
@@ -139,7 +131,7 @@ final class SimpleCameraAnimatorTests: XCTestCase {
 
         // set time to half way and start again
         dateProvider.nowStub.defaultReturnValue += duration / 2
-        animator.startAnimation(afterDelay: .random(in: 1...10))
+        animator.startAnimation(afterDelay: 1.8)
 
         // now update — the fraction should be 0.5
         animator.update()
@@ -151,10 +143,13 @@ final class SimpleCameraAnimatorTests: XCTestCase {
     func testStartAnimationAfterDelayWhileItIsCompleteDoesNotChangeTheState() {
         animator.startAnimation()
         animator.cancel()
+        XCTAssertEqual(recordedCameraAnimatorStatus, [.started, .stopped(reason: .cancelled)])
+        recordedCameraAnimatorStatus = []
 
-        animator.startAnimation(afterDelay: .random(in: 1...10))
+        animator.startAnimation(afterDelay: 3.8)
 
         XCTAssertEqual(animator.state, .inactive)
+        XCTAssertTrue(recordedCameraAnimatorStatus.isEmpty)
     }
 
     func testUpdateAnimationWhenItHasNotYetStartedDoesNotSetCamera() {
@@ -164,7 +159,7 @@ final class SimpleCameraAnimatorTests: XCTestCase {
     }
 
     func testUpdateAnimationBeforeDelayIsOverDoesNotSetCamera() {
-        animator.startAnimation(afterDelay: .random(in: 1...10))
+        animator.startAnimation(afterDelay: 4.2)
 
         animator.update()
 
@@ -215,8 +210,6 @@ final class SimpleCameraAnimatorTests: XCTestCase {
 
         animator.update()
 
-        XCTAssertEqual(delegate.cameraAnimatorDidStopRunningStub.invocations.count, 1)
-        XCTAssertIdentical(delegate.cameraAnimatorDidStopRunningStub.invocations.first?.parameters, animator)
     }
 
     func testUpdateAnimationWhenTimeElapsedIsDurationSetsStateToInactive() {
@@ -255,7 +248,7 @@ final class SimpleCameraAnimatorTests: XCTestCase {
     }
 
     func testCancelAnimationWhileItIsDelayedSetsItsStateToInactive() {
-        animator.startAnimation(afterDelay: .random(in: 1...10))
+        animator.startAnimation(afterDelay: 2.8)
 
         animator.cancel()
 
@@ -265,7 +258,7 @@ final class SimpleCameraAnimatorTests: XCTestCase {
     func testCancelAnimationWhileItIsDelayedInvokesCompletionBlocks() {
         let completionStub = Stub<UIViewAnimatingPosition, Void>()
         animator.addCompletion(completionStub.call(with:))
-        animator.startAnimation(afterDelay: .random(in: 1...10))
+        animator.startAnimation(afterDelay: 8.3)
 
         animator.cancel()
 
@@ -318,7 +311,7 @@ final class SimpleCameraAnimatorTests: XCTestCase {
     }
 
     func testStopAnimationWhileItIsDelayedSetsItsStateToInactive() {
-        animator.startAnimation(afterDelay: .random(in: 1...10))
+        animator.startAnimation(afterDelay: 8.2)
 
         animator.stopAnimation()
 
@@ -328,7 +321,7 @@ final class SimpleCameraAnimatorTests: XCTestCase {
     func testStopAnimationWhileItIsDelayedInvokesCompletionBlocks() {
         let completionStub = Stub<UIViewAnimatingPosition, Void>()
         animator.addCompletion(completionStub.call(with:))
-        animator.startAnimation(afterDelay: .random(in: 1...10))
+        animator.startAnimation(afterDelay: 5.8)
 
         animator.stopAnimation()
 

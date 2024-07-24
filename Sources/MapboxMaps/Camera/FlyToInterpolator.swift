@@ -1,3 +1,5 @@
+import UIKit
+
 // swiftlint:disable identifier_name
 
 /// "fly-to" interpolator object that implements an “optimal path” animation
@@ -52,6 +54,7 @@ internal struct FlyToInterpolator {
     ///   - mapCameraOptions: Camera-specific capabilities of the map, for example, min-zoom, max-pitch
     ///   - size: Map View size in points
     internal init(from source: CameraState, to dest: CameraOptions, cameraBounds: CameraBounds, size: CGSize) {
+        //swiftlint:disable:previous function_body_length
         // Initial conditions
         let sourcePaddingParam   = source.padding
         let sourceCoord          = source.center

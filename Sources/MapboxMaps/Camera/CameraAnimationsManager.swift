@@ -34,13 +34,17 @@ public final class CameraAnimationsManager {
     ///         not be animated.
     ///   - duration: Duration of the animation, measured in seconds. If nil, a suitable calculated
     ///               duration is used.
+    ///   - curve: The easing curve for the animation
     ///   - completion: Completion handler called when the animation stops
     /// - Returns: An instance of `Cancelable` which can be canceled if necessary
     @discardableResult
-    public func fly(to: CameraOptions,
-                    duration: TimeInterval? = nil,
-                    completion: AnimationCompletion? = nil) -> Cancelable? {
-        return impl.fly(to: to, duration: duration, completion: completion)
+    public func fly(
+        to: CameraOptions,
+        duration: TimeInterval? = nil,
+        curve: TimingCurve = .easeOut,
+        completion: AnimationCompletion? = nil
+    ) -> Cancelable {
+        return impl.fly(to: to, duration: duration, curve: curve, completion: completion)
     }
 
     /// Ease the camera to a destination
@@ -54,10 +58,12 @@ public final class CameraAnimationsManager {
     ///   - completion: completion to be called after animation
     /// - Returns: An instance of `Cancelable` which can be canceled if necessary
     @discardableResult
-    public func ease(to: CameraOptions,
-                     duration: TimeInterval,
-                     curve: UIView.AnimationCurve = .easeOut,
-                     completion: AnimationCompletion? = nil) -> Cancelable? {
+    public func ease(
+        to: CameraOptions,
+        duration: TimeInterval,
+        curve: UIView.AnimationCurve = .easeOut,
+        completion: AnimationCompletion? = nil
+    ) -> Cancelable {
         return impl.ease(
             to: to,
             duration: duration,
@@ -167,5 +173,32 @@ public final class CameraAnimationsManager {
             dampingRatio: dampingRatio,
             animationOwner: animationOwner,
             animations: animations)
+    }
+
+    /// A stream that  emits an event  when a ``CameraAnimator`` has started
+    public var onCameraAnimatorStarted: Signal<CameraAnimator> {
+        impl.onCameraAnimatorStatusChanged
+            .compactMap { (animator, status) in
+                guard status == .started else { return nil }
+                return animator
+            }
+    }
+
+    /// A stream that  emits an event  when a ``CameraAnimator`` has finished.
+    public var onCameraAnimatorFinished: Signal<CameraAnimator> {
+        impl.onCameraAnimatorStatusChanged
+            .compactMap { (animator, status) in
+                guard status == .stopped(reason: .finished) else { return nil }
+                return animator
+            }
+    }
+
+    /// A stream that  emits an event  when a ``CameraAnimator`` has cancelled.
+    public var onCameraAnimatorCancelled: Signal<CameraAnimator> {
+        impl.onCameraAnimatorStatusChanged
+            .compactMap { (animator, status) in
+                guard status == .stopped(reason: .cancelled) else { return nil }
+                return animator
+            }
     }
 }

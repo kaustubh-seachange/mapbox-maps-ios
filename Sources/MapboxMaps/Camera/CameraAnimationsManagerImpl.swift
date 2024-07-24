@@ -6,16 +6,19 @@ internal protocol CameraAnimationsManagerProtocol: AnyObject {
     var cameraAnimators: [CameraAnimator] { get }
 
     func cancelAnimations()
+    func cancelAnimations(withOwners owners: [AnimationOwner], andTypes types: [AnimationType])
 
     @discardableResult
     func fly(to: CameraOptions,
              duration: TimeInterval?,
+             curve: TimingCurve,
              completion: AnimationCompletion?) -> Cancelable
 
     @discardableResult
     func ease(to: CameraOptions,
               duration: TimeInterval,
               curve: UIView.AnimationCurve,
+              animationOwner: AnimationOwner,
               completion: AnimationCompletion?) -> Cancelable
 
     func decelerate(location: CGPoint,
@@ -50,12 +53,15 @@ internal protocol CameraAnimationsManagerProtocol: AnyObject {
                                   duration: TimeInterval,
                                   curve: TimingCurve,
                                   owner: AnimationOwner) -> SimpleCameraAnimatorProtocol
+    var onCameraAnimatorStatusChanged: Signal<CameraAnimatorStatusPayload> { get }
 }
 
 internal final class CameraAnimationsManagerImpl: CameraAnimationsManagerProtocol {
 
     private let factory: CameraAnimatorsFactoryProtocol
     private let runner: CameraAnimatorsRunnerProtocol
+
+    var onCameraAnimatorStatusChanged: Signal<CameraAnimatorStatusPayload> { runner.onCameraAnimatorStatusChanged }
 
     /// See ``CameraAnimationsManager/cameraAnimators``.
     internal var cameraAnimators: [CameraAnimator] {
@@ -73,18 +79,24 @@ internal final class CameraAnimationsManagerImpl: CameraAnimationsManagerProtoco
         runner.cancelAnimations()
     }
 
+    internal func cancelAnimations(withOwners owners: [AnimationOwner], andTypes types: [AnimationType]) {
+        runner.cancelAnimations(withOwners: owners, andTypes: types)
+    }
+
     // MARK: - High-Level Animation APIs
 
     /// See ``CameraAnimationsManager/fly(to:duration:completion:)``.
     @discardableResult
     internal func fly(to: CameraOptions,
                       duration: TimeInterval?,
+                      curve: TimingCurve,
                       completion: AnimationCompletion?) -> Cancelable {
         runner.cancelAnimations(withOwners: [.cameraAnimationsManager])
         let animator = factory.makeFlyToAnimator(
             toCamera: to,
-            animationOwner: .cameraAnimationsManager,
-            duration: duration)
+            duration: duration,
+            curve: curve,
+            animationOwner: .cameraAnimationsManager)
         if let completion = completion {
             animator.addCompletion(completion)
         }
@@ -95,15 +107,18 @@ internal final class CameraAnimationsManagerImpl: CameraAnimationsManagerProtoco
 
     /// See ``CameraAnimationsManager/ease(to:duration:curve:completion:)``.
     @discardableResult
-    internal func ease(to: CameraOptions,
-                       duration: TimeInterval,
-                       curve: UIView.AnimationCurve,
-                       completion: AnimationCompletion?) -> Cancelable {
-        runner.cancelAnimations(withOwners: [.cameraAnimationsManager])
+    func ease(
+        to: CameraOptions,
+        duration: TimeInterval,
+        curve: UIView.AnimationCurve,
+        animationOwner: AnimationOwner,
+        completion: AnimationCompletion?
+    ) -> Cancelable {
+        runner.cancelAnimations(withOwners: [animationOwner])
         let animatorImpl = factory.makeBasicCameraAnimator(
             duration: duration,
             curve: curve,
-            animationOwner: .cameraAnimationsManager,
+            animationOwner: animationOwner,
             animations: { (transition) in
                 transition.center.toValue = to.center
                 transition.padding.toValue = to.padding
@@ -125,7 +140,7 @@ internal final class CameraAnimationsManagerImpl: CameraAnimationsManagerProtoco
         return animator
     }
 
-    /// This function will handle the natural decelration of a gesture when there is a velocity provided. A use case for this is the pan gesture.
+    /// This function will handle the natural deceleration of a gesture when there is a velocity provided. A use case for this is the pan gesture.
     /// - Parameters:
     ///   - location: The initial location. This location will be simulated based on velocity and decelerationFactor.
     ///   - velocity: The initial velocity.
@@ -228,5 +243,19 @@ internal final class CameraAnimationsManagerImpl: CameraAnimationsManagerProtoco
             owner: owner)
         runner.add(animator)
         return animator
+    }
+}
+
+extension CameraAnimationsManagerProtocol {
+
+    /// See ``CameraAnimationsManager/ease(to:duration:curve:completion:)``.
+    @discardableResult
+    func ease(
+        to: CameraOptions,
+        duration: TimeInterval,
+        curve: UIView.AnimationCurve,
+        completion: AnimationCompletion?
+    ) -> Cancelable {
+        ease(to: to, duration: duration, curve: curve, animationOwner: .cameraAnimationsManager, completion: completion)
     }
 }

@@ -8,8 +8,6 @@ final class BasicCameraAnimatorImplIntegrationTests: XCTestCase {
     var mapboxMap: MockMapboxMap!
     var mainQueue: MockMainQueue!
     var animator: BasicCameraAnimatorImpl!
-    // swiftlint:disable:next weak_delegate
-    var delegate: MockBasicCameraAnimatorDelegate!
 
     override func setUp() {
         super.setUp()
@@ -24,21 +22,17 @@ final class BasicCameraAnimatorImplIntegrationTests: XCTestCase {
             owner: .unspecified,
             mapboxMap: mapboxMap,
             mainQueue: mainQueue,
-            cameraView: cameraView)
-        delegate = MockBasicCameraAnimatorDelegate()
-        animator.delegate = delegate
-        animator.addAnimations { (transition) in
-            transition.zoom.toValue = cameraOptionsTestValue.zoom!
-            transition.center.toValue = cameraOptionsTestValue.center!
-            transition.bearing.toValue = cameraOptionsTestValue.bearing!
-            transition.anchor.toValue = cameraOptionsTestValue.anchor!
-            transition.pitch.toValue = cameraOptionsTestValue.pitch!
-            transition.padding.toValue = cameraOptionsTestValue.padding!
-        }
+            cameraView: cameraView) { (transition) in
+                transition.zoom.toValue = cameraOptionsTestValue.zoom!
+                transition.center.toValue = cameraOptionsTestValue.center!
+                transition.bearing.toValue = cameraOptionsTestValue.bearing!
+                transition.anchor.toValue = cameraOptionsTestValue.anchor!
+                transition.pitch.toValue = cameraOptionsTestValue.pitch!
+                transition.padding.toValue = cameraOptionsTestValue.padding!
+            }
     }
 
     override func tearDown() {
-        delegate = nil
         animator = nil
         mainQueue = nil
         mapboxMap = nil

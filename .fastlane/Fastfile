@@ -17,26 +17,57 @@ ENV["SPACESHIP_SKIP_2FA_UPGRADE"] = "1"
 
 platform :ios do
 
+  lane :setup_distribution_cert do
+    setup_ci
+    match(type: "appstore")
+  end
+
+  private_lane :api_key_if_needed do
+    # We recommend to have api key on local machines to improve sign-in experience
+    # While on the CI we will use api key components for the authentication
+    # You can setup the api key by following the guide: https://github.com/mapbox/apple-internal/blob/master/guides/Modern%20authentification.md
+    file_path = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+
+    if file_path.nil? || !File.exist?(file_path)
+      app_store_connect_api_key
+    end
+  end
+
   lane :build_examples_tests do
+    api_key_if_needed
     setup_circle_ci
     sync_code_signing
     update_code_signing_settings(
       use_automatic_signing: false,
       path: "Apps/Examples/Examples.xcodeproj",
       team_id: "GJZR2MEM28", # Developer Portal Team ID,
+      profile_name: lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING]["mapbox.ExamplesUITests.xctrunner"],
+      targets: ["ExamplesUITests"],
+      code_sign_identity: "Apple Development: Created via API",
+    )
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: "Apps/Examples/Examples.xcodeproj",
+      team_id: "GJZR2MEM28", # Developer Portal Team ID,
       profile_name: lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING]["com.mapbox.examples"],
       targets: ["Examples"],
-      code_sign_identity: "Apple Development: Machiney McMachineface",
+      code_sign_identity: "Apple Development: Created via API",
     )
     run_tests(
       workspace: 'Apps/Apps.xcworkspace',
       scheme: 'Examples',                  # XCTest scheme
       clean: true,                        # Recommended: This would ensure the build would not include unnecessary files
-      configuration: "Release",
-      xcargs: "ENABLE_TESTABILITY=YES SWIFT_TREAT_WARNINGS_AS_ERRORS=NO",
+      # Use the Debug mode here to avoid the compiler crash
+      # https://github.com/apple/swift/issues/72117#issuecomment-1999619388
+      # using the SWIFT_COMPILATION_MODE=incremental doesn't for this scheme.
+      # configuration: "Release",
+      configuration: "Debug",
+      testplan: "Examples no unit tests",
+      xcargs: "ENABLE_TESTABILITY=YES SWIFT_TREAT_WARNINGS_AS_ERRORS=NO COMPILER_INDEX_STORE_ENABLE=NO",
       skip_detect_devices: true,          # Required
       build_for_testing: true,            # Required
       sdk: 'iphoneos',                    # Required
+      destination: "generic/platform=iOS", # Required
       should_zip_build_products: true,     # Must be true to set the correct format for Firebase Test Lab,
       result_bundle: true,
       output_directory: "output/",
@@ -65,7 +96,7 @@ platform :ios do
   end
 
   lane :beta do
-    app_store_connect_api_key # Generate API Token
+    api_key_if_needed # Generate API Token
     increment_build_number(
       build_number: latest_testflight_build_number + 1,
       xcodeproj: 'Apps/Examples/Examples.xcodeproj'
@@ -83,13 +114,15 @@ platform :ios do
       path: "Apps/Examples/Examples.xcodeproj",
       team_id: "GJZR2MEM28", # Developer Portal Team ID,
       profile_name: lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING]["com.mapbox.examples"],
-      targets: ["Examples"]
+      targets: ["Examples"],
+      code_sign_identity: "Apple Development: Created via API",
+      entitlements_file_path: "Examples/Examples_CarPlay.entitlements"
     )
     sync_code_signing(type: "appstore")
     build_app(
       scheme: "Examples",
       workspace: "Apps/Apps.xcworkspace",
-      xcargs: "SWIFT_TREAT_WARNINGS_AS_ERRORS=NO" # Disable to bypass Deprecated error on OfflineManager example
+      xcargs: "SWIFT_TREAT_WARNINGS_AS_ERRORS=NO COMPILER_INDEX_STORE_ENABLE=NO" # Disable to bypass Deprecated error on OfflineManager example
     )
     upload_to_testflight(
       beta_app_feedback_email: "applemachine@mapbox.com",
@@ -101,7 +134,7 @@ platform :ios do
 
   lane :build_tests do
     sh("cd .. && xcodegen")
-    app_store_connect_api_key # Generate API Token
+    api_key_if_needed # Generate API Token
     setup_circle_ci
     sync_code_signing(app_identifier: "com.mapbox.MapboxMapsTestHost")
     update_code_signing_settings(
@@ -110,14 +143,16 @@ platform :ios do
       team_id: "GJZR2MEM28", # Developer Portal Team ID,
       profile_name: lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING]["com.mapbox.MapboxMapsTestHost"],
       targets: ["MapboxTestHost"],
-      code_sign_identity: "Apple Development: Machiney McMachineface",
+      code_sign_identity: "Apple Development: Created via API",
     )
     run_tests(
       project: 'MapboxMaps.xcodeproj',
       scheme: 'MapboxTestHost',
       clean: true,
       configuration: "Release",
-      xcargs: "ENABLE_TESTABILITY=YES",
+      # Use here SWIFT_COMPILATION_MODE=incremental to avoid the compiler crash
+      # https://github.com/apple/swift/issues/72117#issuecomment-1999619388
+      xcargs: "ENABLE_TESTABILITY=YES COMPILER_INDEX_STORE_ENABLE=NO SWIFT_COMPILATION_MODE=incremental",
       build_for_testing: true,
       destination: 'generic/platform=iOS',
       should_zip_build_products: true,

@@ -1,8 +1,11 @@
+import UIKit
 @testable import MapboxMaps
 
 final class MockBasicCameraAnimator: BasicCameraAnimatorProtocol {
-    @Stubbed var delegate: BasicCameraAnimatorDelegate?
+    @TestSignal var onCameraAnimatorStatusChanged: MapboxMaps.Signal<MapboxMaps.CameraAnimatorStatus>
+
     @Stubbed var owner: AnimationOwner = .unspecified
+    @Stubbed var animationType: AnimationType = .unspecified
     @Stubbed var transition: CameraTransition?
     @Stubbed var state: UIViewAnimatingState = .inactive
     @Stubbed var isRunning: Bool = false

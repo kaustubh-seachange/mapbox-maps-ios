@@ -30,7 +30,7 @@ main() {
     MAPBOX_COREMAPS_VERSION=$(jq -r .MapboxCoreMaps "$VERSION_JSON_PATH")
     # The following python one-liner parses the CircleCI config and takes executor called 'xcode-sdk-min' and then checkout the macos xcode version.
     # It's critical to have the same structure in CircleCI config in any place inside of file.
-    XCODE_MIN_VERSION=$(python3 -c "import yaml,sys;print(yaml.safe_load(sys.stdin)['executors']['xcode-sdk-min']['macos']['xcode'])" < "$SCRIPT_DIR/../../.circleci/config.yml")
+    XCODE_MIN_VERSION=$(python3 -c "import yaml,sys;print(yaml.safe_load(sys.stdin)['macos']['xcode'])" < "$SCRIPT_DIR/../../../.circleci/config/executors/xcode-sdk-min.yml")
 
     CHANGELOG=$( ([[ $(command -v parse-changelog) ]] && parse-changelog CHANGELOG.md) || echo "<Compose changelog here>" )
 
@@ -40,8 +40,8 @@ main() {
 $CHANGELOG
 
 ### Dependencies
-* Update to MapboxCommon to \`$MAPBOX_COMMON_VERSION\` (PR link).
-* Update to MapboxCoreMaps to \`$MAPBOX_COREMAPS_VERSION\` (RP link):
+* Update MapboxCommon to \`$MAPBOX_COMMON_VERSION\`.
+* Update MapboxCoreMaps to \`$MAPBOX_COREMAPS_VERSION\`:
   * <details> <summary>Changelog </summary>
     $GL_NATIVE_PUBLIC_MARKDOWN_CHANGELOG
 </details>

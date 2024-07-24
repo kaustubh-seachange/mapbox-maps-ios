@@ -4,37 +4,49 @@ import Foundation
 /// or filter within a map style. Expressions allow you to style data with multiple feature
 /// properties at once, apply conditional logic, and manipulate data with mathematical, logical, and
 /// string operators. This allows for sophisticated runtime styling.
-public typealias Exp = Expression
+@available(*, renamed: "Exp", message: "Use Exp type instead to avoid name clash with Foundation.Expression.")
+public typealias Expression = Exp
 
-/// An ``Expression`` defines a formula for computing the value of any layout property, paint property,
+/// An ``Exp``(expression) defines a formula for computing the value of any layout property, paint property,
 /// or filter within a map style. Expressions allow you to style data with multiple feature
 /// properties at once, apply conditional logic, and manipulate data with mathematical, logical, and
 /// string operators. This allows for sophisticated runtime styling.
-public struct Expression: Codable, CustomStringConvertible, Equatable {
+public struct Exp: Codable, CustomStringConvertible, Equatable {
 
     /// The individual elements of the expression in an array
     internal var elements: [Element]
 
     /// The operator of this expression
+    /// If the expression starts with an argument instead of an operator
+    /// then return the first operator of a contained expression if available.
     public var `operator`: Operator {
-        guard let first = elements.first, case Element.operator(let op) = first else {
-            fatalError("First element of the expression is not an operator.")
+        switch elements.first {
+        case .operator(let op): return op
+        case .argument(.expression(let expression)): return expression.operator
+        default:
+            fatalError("First element of the expression is not an operator nor another expression.")
         }
-        return op
     }
 
     /// The arguments contained in this expression
     public var arguments: [Argument] {
-        return elements.dropFirst().map { (element) -> Argument in
-            guard case Element.argument(let arg) = element else {
-                fatalError("All elements after the first element in the expression must be arguments.")
-            }
-            return arg
+        /// If the expression starts with an argument instead of an operator, return all of the arguments
+        if case .argument = elements.first {
+            return elements.map(returnArgument)
         }
+        return elements.dropFirst().map(returnArgument)
+    }
+
+    /// Check if element is argument and return, fatalError if not
+    internal func returnArgument(element: Element) -> Argument {
+        guard case Element.argument(let arg) = element else {
+            fatalError("All elements after the first element in the expression must be arguments.")
+        }
+        return arg
     }
 
     public init(_ op: Operator,
-                @ExpressionArgumentBuilder content: () -> [Expression.Argument]) {
+                @ExpressionArgumentBuilder content: () -> [Exp.Argument]) {
         self.init(operator: op, arguments: content())
     }
 
@@ -46,6 +58,16 @@ public struct Expression: Codable, CustomStringConvertible, Equatable {
     /// Initialize an expression with an operator and arguments
     public init(operator op: Operator, arguments: [Argument]) {
         self.elements = [.operator(op)] + arguments.map { Element.argument($0) }
+    }
+
+    /// Initialize an expression with only arguments
+    public init(@ExpressionArgumentBuilder content: () -> [Exp.Argument]) {
+        self.init(arguments: content())
+    }
+
+    /// Initialize an expression with only arguments
+    public init(arguments: [Argument]) {
+        self.elements = arguments.map { Element.argument($0) }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -64,12 +86,13 @@ public struct Expression: Codable, CustomStringConvertible, Equatable {
         var container = try decoder.unkeyedContainer()
         elements = []
         guard !container.isAtEnd else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Expression requires an operator, but no operator was present.")
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Expression requires an operator or argument, but neither was present.")
         }
-        // First element must be an operator
-        let decodedOperator = try container.decode(Operator.self)
-        elements.append(.operator(decodedOperator))
-        // Subsequent elemenets must be arguments
+        // First element can be an operator or argument
+        if let decodedOperator = try? container.decode(Operator.self) {
+            elements.append(.operator(decodedOperator))
+        }
+        // Subsequent elements must be arguments
         while !container.isAtEnd {
             let decodedArgument = try container.decode(Argument.self)
             elements.append(.argument(decodedArgument))
@@ -94,7 +117,7 @@ public struct Expression: Codable, CustomStringConvertible, Equatable {
             }
         }
 
-        public static func == (lhs: Expression.Element, rhs: Expression.Element) -> Bool {
+        public static func == (lhs: Exp.Element, rhs: Exp.Element) -> Bool {
             switch (lhs, rhs) {
             case (.operator(let lhsOp), .operator(let rhsOp)):
                 return lhsOp.rawValue == rhsOp.rawValue
@@ -135,8 +158,8 @@ public struct Expression: Codable, CustomStringConvertible, Equatable {
         }
     }
 
-    /// An `ExpressionArgument` is either a literal (associated with a double, string, boolean, or null value)
-    /// or another `Expression`
+    /// An `Exp.Argument` is either a literal (associated with a double, string, boolean, or null value)
+    /// or another `Exp`
     public indirect enum Argument: Codable, CustomStringConvertible, Equatable {
 
         case number(Double)
@@ -147,7 +170,7 @@ public struct Expression: Codable, CustomStringConvertible, Equatable {
         case option(Option)
         case geoJSONObject(GeoJSONObject)
         case null
-        case expression(Expression)
+        case expression(Exp)
 
         public var description: String {
             switch self {
@@ -209,7 +232,7 @@ public struct Expression: Codable, CustomStringConvertible, Equatable {
                 self = .boolean(validBoolean)
             } else if let object = try? container.decode(GeoJSONObject.self) {
                 self = .geoJSONObject(object)
-            } else if let validExpression = try? container.decode(Expression.self) {
+            } else if let validExpression = try? container.decode(Exp.self) {
                 self = .expression(validExpression)
             } else if let validOption = try? container.decode(Option.self) {
                 self = .option(validOption)

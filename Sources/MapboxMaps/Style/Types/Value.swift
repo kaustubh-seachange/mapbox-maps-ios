@@ -2,7 +2,7 @@ import Foundation
 
 public enum Value<T: Codable>: Codable {
     case constant(T)
-    case expression(Expression)
+    case expression(Exp)
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
@@ -23,7 +23,7 @@ public enum Value<T: Codable>: Codable {
             return
         }
 
-        if let decodedExpression = try? container.decode(Expression.self) {
+        if let decodedExpression = try? container.decode(Exp.self) {
             self = .expression(decodedExpression)
             return
         }
@@ -34,6 +34,19 @@ public enum Value<T: Codable>: Codable {
     }
 }
 
-extension Value: Equatable where T: Equatable {
+extension Value: Equatable where T: Equatable {}
 
+extension Value {
+    internal init(constant: T) {
+        self = .constant(constant)
+    }
+
+    internal var asConstant: T? {
+        switch self {
+        case let .constant(c):
+            return c
+        case .expression:
+            return nil
+        }
+    }
 }

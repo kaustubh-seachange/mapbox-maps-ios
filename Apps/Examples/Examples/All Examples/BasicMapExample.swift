@@ -1,15 +1,21 @@
 import UIKit
 import MapboxMaps
 
-@objc(BasicMapExample)
 final class BasicMapExample: UIViewController, ExampleProtocol {
-
     private var mapView: MapView!
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        mapView = MapView(frame: view.bounds)
+        let cameraOptions = CameraOptions(
+            center: CLLocationCoordinate2D(latitude: 41.879, longitude: -87.635),
+            zoom: 16,
+            bearing: 12,
+            pitch: 60)
+        let options = MapInitOptions(cameraOptions: cameraOptions)
+
+        mapView = MapView(frame: view.bounds, mapInitOptions: options)
+
         mapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         mapView.ornaments.options.scaleBar.visibility = .visible
 

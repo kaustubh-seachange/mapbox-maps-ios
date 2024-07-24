@@ -1,31 +1,31 @@
 import XCTest
+import UIKit
 @testable import MapboxMaps
 
 final class CameraAnimatorsRunnerTests: XCTestCase {
-    var enablable: Enablable!
     var mapboxMap: MockMapboxMap!
     var cameraAnimatorsRunner: CameraAnimatorsRunner!
+    var cancelables: Set<AnyCancelable> = []
 
     override func setUp() {
         super.setUp()
-        enablable = Enablable()
         mapboxMap = MockMapboxMap()
         cameraAnimatorsRunner = CameraAnimatorsRunner(
-            mapboxMap: mapboxMap,
-            enablable: enablable)
+            mapboxMap: mapboxMap)
+        cameraAnimatorsRunner.isEnabled = true
     }
 
     override func tearDown() {
         cameraAnimatorsRunner = nil
         mapboxMap = nil
-        enablable = nil
+        cancelables = []
         super.tearDown()
     }
 
     func testCameraAnimators() {
-        let animators = [MockCameraAnimator].random(
-            withLength: 10,
-            generator: MockCameraAnimator.init)
+        let animators = [
+            MockCameraAnimator(), MockCameraAnimator(), MockCameraAnimator(), MockCameraAnimator()
+        ]
 
         for animator in animators {
             cameraAnimatorsRunner.add(animator)
@@ -39,8 +39,8 @@ final class CameraAnimatorsRunnerTests: XCTestCase {
     func testUpdateWithAnimationsEnabled() {
         let animator = MockCameraAnimator()
         cameraAnimatorsRunner.add(animator)
-        cameraAnimatorsRunner.cameraAnimatorDidStartRunning(animator)
-        enablable.isEnabled = true
+        animator.$onCameraAnimatorStatusChanged.send(.started)
+        cameraAnimatorsRunner.isEnabled = true
 
         cameraAnimatorsRunner.update()
 
@@ -52,20 +52,24 @@ final class CameraAnimatorsRunnerTests: XCTestCase {
     func testUpdateWithAnimationsDisabled() {
         let animator = MockCameraAnimator()
         cameraAnimatorsRunner.add(animator)
-        cameraAnimatorsRunner.cameraAnimatorDidStartRunning(animator)
-        enablable.isEnabled = false
+        animator.$onCameraAnimatorStatusChanged.send(.started)
+
+        cameraAnimatorsRunner.isEnabled = false
+
+        XCTAssertEqual(animator.stopAnimationStub.invocations.count, 1)
 
         cameraAnimatorsRunner.update()
 
-        XCTAssertEqual(animator.stopAnimationStub.invocations.count, 1)
+        XCTAssertEqual(animator.stopAnimationStub.invocations.count, 2)
+
         XCTAssertEqual(animator.cancelStub.invocations.count, 0)
         XCTAssertEqual(animator.updateStub.invocations.count, 0)
     }
 
     func testCancelAnimations() {
         let animator = MockCameraAnimator()
-        animator.state = .random()
-        animator.owner = .random()
+        animator.state = .inactive
+        animator.owner = .init(rawValue: UUID().uuidString)
         cameraAnimatorsRunner.add(animator)
 
         cameraAnimatorsRunner.cancelAnimations()
@@ -74,11 +78,23 @@ final class CameraAnimatorsRunnerTests: XCTestCase {
         XCTAssertEqual(animator.cancelStub.invocations.count, 0)
     }
 
+    func testCancelAnimationsWhenDisabled() {
+        let animator = MockCameraAnimator()
+        animator.state = .active
+        animator.owner = .init(rawValue: UUID().uuidString)
+        cameraAnimatorsRunner.add(animator)
+
+        cameraAnimatorsRunner.isEnabled = false
+
+        XCTAssertEqual(animator.stopAnimationStub.invocations.count, 1)
+        XCTAssertEqual(animator.cancelStub.invocations.count, 0)
+    }
+
     func testCancelAnimationsWithEmptyOwnersArray() {
         let animators = [MockCameraAnimator].random(withLength: 10) {
             let animator = MockCameraAnimator()
-            animator.state = .random()
-            animator.owner = .random()
+            animator.state = .stopped
+            animator.owner = .init(rawValue: UUID().uuidString)
             return animator
         }
 
@@ -95,11 +111,11 @@ final class CameraAnimatorsRunnerTests: XCTestCase {
     }
 
     func testCancelAnimationsWithSingleOwner() {
-        let owner = AnimationOwner.random()
+        let owner = AnimationOwner.init(rawValue: UUID().uuidString)
 
         let animators = [MockCameraAnimator].random(withLength: 10) {
             let animator = MockCameraAnimator()
-            animator.state = .random()
+            animator.state = .inactive
             animator.owner = owner
             return animator
         }
@@ -122,17 +138,17 @@ final class CameraAnimatorsRunnerTests: XCTestCase {
     }
 
     func testCancelAnimationsWithMultipleOwners() {
-        let owner1 = AnimationOwner.random()
-        let owner2 = AnimationOwner.random()
+        let owner1 = AnimationOwner.init(rawValue: UUID().uuidString)
+        let owner2 = AnimationOwner.init(rawValue: UUID().uuidString)
 
         let animators: [MockCameraAnimator] = .random(withLength: 5) {
             let animator = MockCameraAnimator()
-            animator.state = .random()
+            animator.state = .active
             animator.owner = owner1
             return animator
         } + .random(withLength: 6) {
             let animator = MockCameraAnimator()
-            animator.state = .random()
+            animator.state = .stopped
             animator.owner = owner2
             return animator
         }
@@ -154,65 +170,155 @@ final class CameraAnimatorsRunnerTests: XCTestCase {
         XCTAssertEqual(animators[10].cancelStub.invocations.count, 0)
     }
 
-    func testCameraAnimatorDelegate() {
+    func testCancelAnimationWithSingleOwnerAndSingleType() {
+        let owner = AnimationOwner(rawValue: "first-owner")
+        let anotherOwner = AnimationOwner(rawValue: "second-owner")
+        let thirdOwner = AnimationOwner(rawValue: "third-owner")
+
+        let makeAnimator = { (owner: AnimationOwner, animationType: AnimationType) -> MockCameraAnimator in
+            let decelerationAnimator = MockCameraAnimator()
+            decelerationAnimator.state = .active
+            decelerationAnimator.animationType = animationType
+            decelerationAnimator.owner = owner
+            return decelerationAnimator
+        }
+
+        let decelerationAnimator = makeAnimator(owner, .deceleration)
+        let decelerationAnimatorOtherOwner = makeAnimator(anotherOwner, .deceleration)
+        let unspecifiedAnimator = makeAnimator(owner, .unspecified)
+        let unspecifiedAnimatorThirdOwner = makeAnimator(thirdOwner, .unspecified)
+
+        [decelerationAnimator, decelerationAnimatorOtherOwner, unspecifiedAnimator, unspecifiedAnimatorThirdOwner]
+            .forEach(cameraAnimatorsRunner.add)
+
+        cameraAnimatorsRunner.cancelAnimations(withOwners: [owner], andTypes: [.deceleration])
+
+        XCTAssertEqual(decelerationAnimator.stopAnimationStub.invocations.count, 1)
+        XCTAssertEqual(decelerationAnimatorOtherOwner.stopAnimationStub.invocations.count, 0)
+        XCTAssertEqual(unspecifiedAnimator.stopAnimationStub.invocations.count, 0)
+        XCTAssertEqual(unspecifiedAnimatorThirdOwner.stopAnimationStub.invocations.count, 0)
+    }
+
+    func testCancelAnimationWithMultipleOwnerAndMultipleType() {
+        let owner = AnimationOwner(rawValue: "first-owner")
+        let anotherOwner = AnimationOwner(rawValue: "second-owner")
+        let thirdOwner = AnimationOwner(rawValue: "third-owner")
+
+        let makeAnimator = { (owner: AnimationOwner, animationType: AnimationType) -> MockCameraAnimator in
+            let decelerationAnimator = MockCameraAnimator()
+            decelerationAnimator.state = .stopped
+            decelerationAnimator.animationType = animationType
+            decelerationAnimator.owner = owner
+            return decelerationAnimator
+        }
+
+        let decelerationAnimator = makeAnimator(owner, .deceleration)
+        let decelerationAnimatorOtherOwner = makeAnimator(anotherOwner, .deceleration)
+        let unspecifiedAnimator = makeAnimator(owner, .unspecified)
+        let unspecifiedAnimatorThirdOwner = makeAnimator(thirdOwner, .unspecified)
+
+        [decelerationAnimator, decelerationAnimatorOtherOwner, unspecifiedAnimator, unspecifiedAnimatorThirdOwner]
+            .forEach(cameraAnimatorsRunner.add)
+
+        cameraAnimatorsRunner.cancelAnimations(withOwners: [owner, anotherOwner], andTypes: [.deceleration, .unspecified])
+
+        XCTAssertEqual(decelerationAnimator.stopAnimationStub.invocations.count, 1)
+        XCTAssertEqual(decelerationAnimatorOtherOwner.stopAnimationStub.invocations.count, 1)
+        XCTAssertEqual(unspecifiedAnimator.stopAnimationStub.invocations.count, 1)
+        XCTAssertEqual(unspecifiedAnimatorThirdOwner.stopAnimationStub.invocations.count, 0)
+    }
+
+    func testCameraAnimatorStatus() {
         let animator1 = MockCameraAnimator()
         let animator2 = MockCameraAnimator()
 
+        cameraAnimatorsRunner.add(animator1)
+        cameraAnimatorsRunner.add(animator2)
+
         // stopping before starting should have no effect
-        cameraAnimatorsRunner.cameraAnimatorDidStopRunning(animator1)
+        animator1.$onCameraAnimatorStatusChanged.send(.stopped(reason: .cancelled))
         XCTAssertEqual(mapboxMap.beginAnimationStub.invocations.count, 0)
         XCTAssertEqual(mapboxMap.endAnimationStub.invocations.count, 0)
 
         // start once
-        cameraAnimatorsRunner.cameraAnimatorDidStartRunning(animator1)
+        animator1.$onCameraAnimatorStatusChanged.send(.started)
         XCTAssertEqual(mapboxMap.beginAnimationStub.invocations.count, 1)
         XCTAssertEqual(mapboxMap.endAnimationStub.invocations.count, 0)
 
         // start twice
-        cameraAnimatorsRunner.cameraAnimatorDidStartRunning(animator1)
+        animator1.$onCameraAnimatorStatusChanged.send(.started)
         XCTAssertEqual(mapboxMap.beginAnimationStub.invocations.count, 1)
         XCTAssertEqual(mapboxMap.endAnimationStub.invocations.count, 0)
 
         // start a second
-        cameraAnimatorsRunner.cameraAnimatorDidStartRunning(animator2)
+        animator2.$onCameraAnimatorStatusChanged.send(.started)
         XCTAssertEqual(mapboxMap.beginAnimationStub.invocations.count, 2)
         XCTAssertEqual(mapboxMap.endAnimationStub.invocations.count, 0)
 
         // end the first
-        cameraAnimatorsRunner.cameraAnimatorDidStopRunning(animator1)
+        animator1.$onCameraAnimatorStatusChanged.send(.stopped(reason: .finished))
         XCTAssertEqual(mapboxMap.beginAnimationStub.invocations.count, 2)
         XCTAssertEqual(mapboxMap.endAnimationStub.invocations.count, 1)
 
         // end the first again
-        cameraAnimatorsRunner.cameraAnimatorDidStopRunning(animator1)
+        animator1.$onCameraAnimatorStatusChanged.send(.stopped(reason: .finished))
         XCTAssertEqual(mapboxMap.beginAnimationStub.invocations.count, 2)
         XCTAssertEqual(mapboxMap.endAnimationStub.invocations.count, 1)
 
         // end the second
-        cameraAnimatorsRunner.cameraAnimatorDidStopRunning(animator2)
+        animator2.$onCameraAnimatorStatusChanged.send(.stopped(reason: .finished))
         XCTAssertEqual(mapboxMap.beginAnimationStub.invocations.count, 2)
         XCTAssertEqual(mapboxMap.endAnimationStub.invocations.count, 2)
     }
 
+    func testCameraAnimatorPaused() {
+        var mockCameraAnimator = MockCameraAnimator()
+        cameraAnimatorsRunner.isEnabled = true
+        cameraAnimatorsRunner.add(mockCameraAnimator)
+
+        mockCameraAnimator.$onCameraAnimatorStatusChanged.send(.started)
+        XCTAssertEqual(mapboxMap.beginAnimationStub.invocations.count, 1)
+
+        mockCameraAnimator.$onCameraAnimatorStatusChanged.send(.paused)
+        XCTAssertEqual(mapboxMap.endAnimationStub.invocations.count, 1)
+    }
+
     func testAddWithAnimationsEnabled() {
-        enablable.isEnabled = true
+        cameraAnimatorsRunner.isEnabled = true
 
         let animator = MockCameraAnimator()
 
         cameraAnimatorsRunner.add(animator)
 
-        XCTAssertIdentical(animator.delegate, cameraAnimatorsRunner)
         XCTAssertEqual(animator.stopAnimationStub.invocations.count, 0)
     }
 
     func testAddWithAnimationsDisabled() {
-        enablable.isEnabled = false
+        cameraAnimatorsRunner.isEnabled = false
 
         let animator = MockCameraAnimator()
 
         cameraAnimatorsRunner.add(animator)
 
-        XCTAssertIdentical(animator.delegate, cameraAnimatorsRunner)
         XCTAssertEqual(animator.stopAnimationStub.invocations.count, 1)
+    }
+
+    func testCameraAnimatorStatusObserver() {
+        let mockCameraAnimator = MockCameraAnimator()
+        cameraAnimatorsRunner.isEnabled = true
+        cameraAnimatorsRunner.add(mockCameraAnimator)
+
+        var animatorStatus: CameraAnimatorStatus!
+        cameraAnimatorsRunner.onCameraAnimatorStatusChanged
+            .observe { (animator, status) in
+                XCTAssertIdentical(animator, mockCameraAnimator)
+                animatorStatus = status
+            }
+            .store(in: &cancelables)
+
+        mockCameraAnimator.$onCameraAnimatorStatusChanged.send(.started)
+        XCTAssertEqual(animatorStatus, .started)
+        mockCameraAnimator.$onCameraAnimatorStatusChanged.send(.stopped(reason: .finished))
+        XCTAssertEqual(animatorStatus, .stopped(reason: .finished))
     }
 }

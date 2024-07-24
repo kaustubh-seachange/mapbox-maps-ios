@@ -4,17 +4,13 @@ import UIKit
 /// It seamlessly incorporates zooming and panning to help the user find their bearings even after
 /// traversing a great distance.
 ///
-/// - SeeAlso: ``CameraAnimationsManager/fly(to:duration:completion:)``
-public final class FlyToCameraAnimator: NSObject, CameraAnimator, CameraAnimatorProtocol {
+/// - SeeAlso: ``CameraAnimationsManager/fly(to:duration:curve:completion:)``
+public final class FlyToCameraAnimator: CameraAnimator, CameraAnimatorProtocol {
     private enum InternalState: Equatable {
         case initial
         case running(startDate: Date)
         case final(UIViewAnimatingPosition)
     }
-
-    private let mapboxMap: MapboxMapProtocol
-
-    private let mainQueue: MainQueueProtocol
 
     /// The animator's owner
     public let owner: AnimationOwner
@@ -32,23 +28,48 @@ public final class FlyToCameraAnimator: NSObject, CameraAnimator, CameraAnimator
         }
     }
 
-    internal weak var delegate: CameraAnimatorDelegate?
+    let animationType: AnimationType
 
+    private let mapboxMap: MapboxMapProtocol
+    private let mainQueue: MainQueueProtocol
     private let interpolator: FlyToInterpolator
-
     private let finalCameraOptions: CameraOptions
-
     private let dateProvider: DateProvider
-
+    private let unitBezier: UnitBezier
     private var completionBlocks = [AnimationCompletion]()
+
+    private let cameraAnimatorStatusSignal = SignalSubject<CameraAnimatorStatus>()
+    var onCameraAnimatorStatusChanged: Signal<CameraAnimatorStatus> { cameraAnimatorStatusSignal.signal }
+
+    /// Emits a signal when this animator has started.
+    public var onStarted: Signal<Void> {
+        onCameraAnimatorStatusChanged
+            .filter { $0 == .started }
+            .map { _ in }
+    }
+
+    /// Emits a signal when this animator has finished.
+    public var onFinished: Signal<Void> {
+        onCameraAnimatorStatusChanged
+            .filter { $0 == .stopped(reason: .finished) }
+            .map { _ in }
+    }
+
+    /// Emits a signal when this animator is cancelled.
+    public var onCancelled: Signal<Void> {
+        onCameraAnimatorStatusChanged
+            .filter { $0 == .stopped(reason: .cancelled) }
+            .map { _ in }
+    }
 
     private var internalState = InternalState.initial {
         didSet {
             switch (oldValue, internalState) {
             case (.initial, .running):
-                delegate?.cameraAnimatorDidStartRunning(self)
-            case (.running, .final):
-                delegate?.cameraAnimatorDidStopRunning(self)
+                cameraAnimatorStatusSignal.send(.started)
+            case (.running, .final(let position)):
+                let isCancelled = position != .end
+                cameraAnimatorStatusSignal.send(.stopped(reason: isCancelled ? .cancelled : .finished))
             default:
                 // this matches cases where…
                 // * oldValue and internalState are the same
@@ -61,30 +82,38 @@ public final class FlyToCameraAnimator: NSObject, CameraAnimator, CameraAnimator
         }
     }
 
-    internal init(toCamera: CameraOptions,
-                  owner: AnimationOwner,
-                  duration: TimeInterval? = nil,
-                  mapboxMap: MapboxMapProtocol,
-                  mainQueue: MainQueueProtocol,
-                  dateProvider: DateProvider) {
+    init(
+        toCamera: CameraOptions,
+        duration: TimeInterval? = nil,
+        curve: TimingCurve,
+        owner: AnimationOwner,
+        type: AnimationType = .unspecified,
+        mapboxMap: MapboxMapProtocol,
+        mainQueue: MainQueueProtocol,
+        dateProvider: DateProvider
+    ) {
         let flyToInterpolator = FlyToInterpolator(
             from: mapboxMap.cameraState,
             to: toCamera,
             cameraBounds: mapboxMap.cameraBounds,
             size: mapboxMap.size)
-        if let duration = duration {
-            precondition(duration >= 0)
+        var duration = duration ?? flyToInterpolator.duration()
+        if duration < 0 {
+            assertionFailure("Duration can't be negative.")
+            duration = 0
         }
         self.interpolator = flyToInterpolator
         self.mapboxMap = mapboxMap
         self.mainQueue = mainQueue
+        self.duration = duration
+        self.unitBezier = UnitBezier(p1: curve.p1, p2: curve.p2)
         self.owner = owner
+        self.animationType = type
         self.finalCameraOptions = toCamera
-        self.duration = duration ?? flyToInterpolator.duration()
         self.dateProvider = dateProvider
     }
 
-    internal func startAnimation() {
+    func startAnimation() {
         switch internalState {
         case .initial:
             internalState = .running(startDate: dateProvider.now)
@@ -112,7 +141,7 @@ public final class FlyToCameraAnimator: NSObject, CameraAnimator, CameraAnimator
         stopAnimation()
     }
 
-    internal func addCompletion(_ completion: @escaping AnimationCompletion) {
+    func addCompletion(_ completion: @escaping AnimationCompletion) {
         switch internalState {
         case .initial, .running:
             completionBlocks.append(completion)
@@ -131,11 +160,18 @@ public final class FlyToCameraAnimator: NSObject, CameraAnimator, CameraAnimator
         completionBlocks.removeAll()
     }
 
-    internal func update() {
+    func update() {
         guard case .running(let startDate) = internalState else {
             return
         }
-        let fractionComplete = min(dateProvider.now.timeIntervalSince(startDate) / duration, 1)
+
+        let elapsedTime = dateProvider.now.timeIntervalSince(startDate)
+
+        guard elapsedTime >= 0 else {
+            return
+        }
+
+        let fractionComplete = unitBezier.solve(min(elapsedTime / duration, 1), 1e-6)
         guard fractionComplete < 1 else {
             internalState = .final(.end)
             mapboxMap.setCamera(to: finalCameraOptions)

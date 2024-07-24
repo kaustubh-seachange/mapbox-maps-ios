@@ -1,32 +1,28 @@
 // This file is generated
 import XCTest
-@testable import MapboxMaps
+@_spi(Experimental) @testable import MapboxMaps
 
 final class SkyLayerTests: XCTestCase {
 
     func testLayerProtocolMembers() {
 
         var layer = SkyLayer(id: "test-id")
-        layer.source = "some-source"
-        layer.sourceLayer = nil
         layer.minZoom = 10.0
         layer.maxZoom = 20.0
+        layer.slot = .testConstantValue()
 
-        XCTAssert(layer.id == "test-id")
-        XCTAssert(layer.type == LayerType.sky)
-        XCTAssert(layer.filter == nil)
-        XCTAssert(layer.source == "some-source")
-        XCTAssertNil(layer.sourceLayer)
-        XCTAssert(layer.minZoom == 10.0)
-        XCTAssert(layer.maxZoom == 20.0)
+        XCTAssertEqual(layer.id, "test-id")
+        XCTAssertEqual(layer.type, LayerType.sky)
+        XCTAssertEqual(layer.minZoom, 10.0)
+        XCTAssertEqual(layer.maxZoom, 20.0)
+        XCTAssertEqual(layer.slot, Slot.testConstantValue())
     }
 
     func testEncodingAndDecodingOfLayerProtocolProperties() {
         var layer = SkyLayer(id: "test-id")
-        layer.source = "some-source"
-        layer.sourceLayer = nil
         layer.minZoom = 10.0
         layer.maxZoom = 20.0
+        layer.slot = .testConstantValue()
 
         var data: Data?
         do {
@@ -42,13 +38,11 @@ final class SkyLayerTests: XCTestCase {
 
         do {
             let decodedLayer = try JSONDecoder().decode(SkyLayer.self, from: validData)
-            XCTAssert(decodedLayer.id == "test-id")
-            XCTAssert(decodedLayer.type == LayerType.sky)
-            XCTAssert(decodedLayer.filter == nil)
-            XCTAssert(decodedLayer.source == "some-source")
-            XCTAssertNil(decodedLayer.sourceLayer)
-            XCTAssert(decodedLayer.minZoom == 10.0)
-            XCTAssert(decodedLayer.maxZoom == 20.0)
+            XCTAssertEqual(decodedLayer.id, "test-id")
+            XCTAssertEqual(decodedLayer.type, LayerType.sky)
+            XCTAssertEqual(decodedLayer.minZoom, 10.0)
+            XCTAssertEqual(decodedLayer.maxZoom, 20.0)
+            XCTAssertEqual(layer.slot, Slot.testConstantValue())
         } catch {
             XCTFail("Failed to decode SkyLayer")
         }
@@ -106,18 +100,47 @@ final class SkyLayerTests: XCTestCase {
        do {
            let decodedLayer = try JSONDecoder().decode(SkyLayer.self, from: validData)
            XCTAssert(decodedLayer.visibility == .constant(.visible))
-           XCTAssert(layer.skyAtmosphereColor == Value<StyleColor>.testConstantValue())
-           XCTAssert(layer.skyAtmosphereHaloColor == Value<StyleColor>.testConstantValue())
-           XCTAssert(layer.skyAtmosphereSun == Value<[Double]>.testConstantValue())
-           XCTAssert(layer.skyAtmosphereSunIntensity == Value<Double>.testConstantValue())
-           XCTAssert(layer.skyGradient == Value<StyleColor>.testConstantValue())
-           XCTAssert(layer.skyGradientCenter == Value<[Double]>.testConstantValue())
-           XCTAssert(layer.skyGradientRadius == Value<Double>.testConstantValue())
-           XCTAssert(layer.skyOpacity == Value<Double>.testConstantValue())
-           XCTAssert(layer.skyType == Value<SkyType>.testConstantValue())
+           XCTAssertEqual(layer.skyAtmosphereColor, Value<StyleColor>.testConstantValue())
+           XCTAssertEqual(layer.skyAtmosphereHaloColor, Value<StyleColor>.testConstantValue())
+           XCTAssertEqual(layer.skyAtmosphereSun, Value<[Double]>.testConstantValue())
+           XCTAssertEqual(layer.skyAtmosphereSunIntensity, Value<Double>.testConstantValue())
+           XCTAssertEqual(layer.skyGradient, Value<StyleColor>.testConstantValue())
+           XCTAssertEqual(layer.skyGradientCenter, Value<[Double]>.testConstantValue())
+           XCTAssertEqual(layer.skyGradientRadius, Value<Double>.testConstantValue())
+           XCTAssertEqual(layer.skyOpacity, Value<Double>.testConstantValue())
+           XCTAssertEqual(layer.skyType, Value<SkyType>.testConstantValue())
        } catch {
            XCTFail("Failed to decode SkyLayer")
        }
+    }
+
+    func testSetPropertyValueWithFunction() {
+        let layer = SkyLayer(id: "test-id")
+            .slot(Slot.testConstantValue())
+            .minZoom(Double.testConstantValue())
+            .maxZoom(Double.testConstantValue())
+            .skyAtmosphereColor(StyleColor.testConstantValue())
+            .skyAtmosphereHaloColor(StyleColor.testConstantValue())
+            .skyAtmosphereSun(azimuthal: 0, polar: 1)
+            .skyAtmosphereSunIntensity(Double.testConstantValue())
+            .skyGradient(StyleColor.testConstantValue())
+            .skyGradientCenter(azimuthal: 0, polar: 1)
+            .skyGradientRadius(Double.testConstantValue())
+            .skyOpacity(Double.testConstantValue())
+            .skyType(SkyType.testConstantValue())
+
+        XCTAssertEqual(layer.slot, Slot.testConstantValue())
+        XCTAssertEqual(layer.minZoom, Double.testConstantValue())
+        XCTAssertEqual(layer.maxZoom, Double.testConstantValue())
+        XCTAssertEqual(layer.skyAtmosphereColor, Value.constant(StyleColor.testConstantValue()))
+        XCTAssertEqual(layer.skyAtmosphereHaloColor, Value.constant(StyleColor.testConstantValue()))
+        XCTAssertEqual(layer.skyAtmosphereSun, Value.constant([0, 1]))
+        XCTAssertEqual(layer.skyAtmosphereSunIntensity, Value.constant(Double.testConstantValue()))
+        XCTAssertEqual(layer.skyGradient, Value.constant(StyleColor.testConstantValue()))
+        XCTAssertEqual(layer.skyGradientCenter, Value.constant([0, 1]))
+        XCTAssertEqual(layer.skyGradientRadius, Value.constant(Double.testConstantValue()))
+        XCTAssertEqual(layer.skyOpacity, Value.constant(Double.testConstantValue()))
+        XCTAssertEqual(layer.skyType, Value.constant(SkyType.testConstantValue()))
     }
 }
 

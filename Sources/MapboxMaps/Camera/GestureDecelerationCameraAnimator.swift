@@ -1,6 +1,6 @@
 import UIKit
 
-internal final class GestureDecelerationCameraAnimator: NSObject, CameraAnimatorProtocol {
+internal final class GestureDecelerationCameraAnimator: CameraAnimatorProtocol {
     private enum InternalState: Equatable {
         case initial
         case running
@@ -16,13 +16,17 @@ internal final class GestureDecelerationCameraAnimator: NSObject, CameraAnimator
     private let dateProvider: DateProvider
     private var completionBlocks = [AnimationCompletion]()
 
+    var onCameraAnimatorStatusChanged: Signal<CameraAnimatorStatus> { cameraAnimatorStatusSignal.signal }
+    private let cameraAnimatorStatusSignal = SignalSubject<CameraAnimatorStatus>()
+
     private var internalState = InternalState.initial {
         didSet {
             switch (oldValue, internalState) {
             case (.initial, .running):
-                delegate?.cameraAnimatorDidStartRunning(self)
-            case (.running, .final):
-                delegate?.cameraAnimatorDidStopRunning(self)
+                cameraAnimatorStatusSignal.send(.started)
+            case (.running, .final(let position)):
+                let isCancelled = position != .end
+                cameraAnimatorStatusSignal.send(.stopped(reason: isCancelled ? .cancelled : .finished))
             default:
                 // this matches cases where…
                 // * oldValue and internalState are the same
@@ -45,12 +49,14 @@ internal final class GestureDecelerationCameraAnimator: NSObject, CameraAnimator
     }
 
     internal let owner: AnimationOwner
-    internal weak var delegate: CameraAnimatorDelegate?
+
+    internal let animationType: AnimationType
 
     internal init(location: CGPoint,
                   velocity: CGPoint,
                   decelerationFactor: CGFloat,
                   owner: AnimationOwner,
+                  type: AnimationType = .deceleration,
                   locationChangeHandler: @escaping (_ fromLocation: CGPoint, _ toLocation: CGPoint) -> Void,
                   mainQueue: MainQueueProtocol,
                   dateProvider: DateProvider) {
@@ -58,6 +64,7 @@ internal final class GestureDecelerationCameraAnimator: NSObject, CameraAnimator
         self.velocity = velocity
         self.decelerationFactor = decelerationFactor
         self.owner = owner
+        self.animationType = type
         self.locationChangeHandler = locationChangeHandler
         self.mainQueue = mainQueue
         self.dateProvider = dateProvider

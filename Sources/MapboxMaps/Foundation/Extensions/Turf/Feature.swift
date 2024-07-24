@@ -23,6 +23,12 @@ extension Feature {
 
         properties = JSONObject(rawValue: feature.properties)
     }
+
+    /// Set properties on this Feature
+    @_spi(Experimental)
+    public func properties(_ newValue: JSONObject) -> Self {
+        with(self, setter(\.properties, newValue))
+    }
 }
 
 extension MapboxCommon.Feature {
@@ -50,9 +56,10 @@ extension MapboxCommon.Feature {
         // The closest thing would be an empty GeometryCollection.
         let nonNullGeometry = feature.geometry ?? .geometryCollection(.init(geometries: []))
         let geometry = MapboxCommon.Geometry(nonNullGeometry)
+        let properties = feature.properties?.compactMapValues(\.?.rawValue) as? [String: NSObject]
 
         self.init(identifier: identifier,
                   geometry: geometry,
-                  properties: (feature.properties?.rawValue as? [String: NSObject]) ?? [:])
+                  properties: properties ?? [:])
     }
 }
